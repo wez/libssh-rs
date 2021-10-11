@@ -16,9 +16,10 @@ jobs:
         os: [ubuntu-20.04, ubuntu-18.04, macos-10.14]
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
-        with:
-          submodules: "recursive"
+    - name: "checkout repo"
+      uses: actions/checkout@v2
+      with:
+        submodules: "recursive"
     - name: Install Rust
       uses: actions-rs/toolchain@v1
       with:
