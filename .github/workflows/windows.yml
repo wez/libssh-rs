@@ -1,0 +1,37 @@
+name: Windows
+
+on:
+  push:
+    branches:
+    - main
+  pull_request:
+    branches:
+    - main
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2016, windows-2019]
+        env:
+        - TARGET: x86_64-pc-windows-msvc
+        - TARGET: i686-pc-windows-msvc
+    runs-on: ${{ matrix.os }}
+    steps:
+    - uses: actions/checkout@v1
+    - name: Install Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        target: ${{ matrix.env.TARGET }}
+    - name: Build and test
+      env:
+        TARGET: ${{ matrix.env.TARGET }}
+      run: |
+        rustc -V
+        cargo -V
+        cargo run --target %TARGET% --example link --features vendored,vendored-openssl
+      shell: cmd
