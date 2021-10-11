@@ -16,45 +16,44 @@ fn main() {
 
         let target = std::env::var("TARGET").unwrap();
         cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
-        cfg.define("HAVE_SYS_TIME_H", Some("1"));
-        cfg.define("HAVE_UNISTD_H", Some("1"));
-        cfg.define("HAVE_STDINT_H", Some("1"));
         cfg.define("HAVE_GETADDRINFO", Some("1"));
-
+        cfg.define("HAVE_LIBCRYPTO", Some("1"));
         cfg.define("HAVE_OPENSSL_AES_H", Some("1"));
         cfg.define("HAVE_OPENSSL_BLOWFISH_H", Some("1"));
         cfg.define("HAVE_OPENSSL_DES_H", Some("1"));
-        cfg.define("HAVE_OPENSSL_ECDH_H", Some("1"));
-        cfg.define("HAVE_OPENSSL_EC_H", Some("1"));
-        cfg.define("HAVE_OPENSSL_ECDSA_H", Some("1"));
         cfg.define("HAVE_OPENSSL_ECC", Some("1"));
+        cfg.define("HAVE_OPENSSL_ECDH_H", Some("1"));
+        cfg.define("HAVE_OPENSSL_ECDSA_H", Some("1"));
+        cfg.define("HAVE_OPENSSL_EC_H", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
-        cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
-        cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
+        cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
+        cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
         cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
-        cfg.define("HAVE_LIBCRYPTO", Some("1"));
+        cfg.define("HAVE_STDINT_H", Some("1"));
+        cfg.define("HAVE_SYS_TIME_H", Some("1"));
         cfg.define("WITH_ZLIB", Some("1"));
 
         if target.contains("windows") {
             cfg.define("HAVE_IO_H", Some("1"));
-            cfg.define("HAVE__SNPRINTF", Some("1"));
-            cfg.define("HAVE__SNPRINTF_S", Some("1"));
-            cfg.define("HAVE__VSNPRINTF", Some("1"));
-            cfg.define("HAVE__VSNPRINTF_S", Some("1"));
-            cfg.define("HAVE__STRTOUI64", Some("1"));
             cfg.define("HAVE_MEMSET_S", Some("1"));
             cfg.define("HAVE_SECURE_ZERO_MEMORY", Some("1"));
+            cfg.define("HAVE__SNPRINTF", Some("1"));
+            cfg.define("HAVE__SNPRINTF_S", Some("1"));
+            cfg.define("HAVE__STRTOUI64", Some("1"));
+            cfg.define("HAVE__VSNPRINTF", Some("1"));
+            cfg.define("HAVE__VSNPRINTF_S", Some("1"));
         } else {
             cfg.define("HAVE_ARPA_INET_H", Some("1"));
-            cfg.define("HAVE_TERMIOS_H", Some("1"));
-            cfg.define("HAVE_PTHREAD_H", Some("1"));
-            cfg.define("HAVE_SNPRINTF", Some("1"));
-            cfg.define("HAVE_VSNPRINTF", Some("1"));
-            cfg.define("HAVE_SELECT", Some("1"));
             cfg.define("HAVE_CLOCK_GETTIME", Some("1"));
+            cfg.define("HAVE_PTHREAD_H", Some("1"));
+            cfg.define("HAVE_SELECT", Some("1"));
+            cfg.define("HAVE_SNPRINTF", Some("1"));
             cfg.define("HAVE_STRTOULL", Some("1"));
+            cfg.define("HAVE_TERMIOS_H", Some("1"));
+            cfg.define("HAVE_UNISTD_H", Some("1"));
+            cfg.define("HAVE_VSNPRINTF", Some("1"));
 
             if !target.contains("darwin") {
                 cfg.define("HAVE_POLL", Some("1"));
@@ -69,17 +68,26 @@ fn main() {
 
         let compiler = cfg.get_compiler();
         if compiler.is_like_gnu() {
-            cfg.define("HAVE_GCC_THREAD_LOCAL_STORAGE", Some("1"));
             cfg.define("HAVE_COMPILER__FUNCTION__", Some("1"));
             cfg.define("HAVE_COMPILER__FUNC__", Some("1"));
+            cfg.define("HAVE_GCC_THREAD_LOCAL_STORAGE", Some("1"));
         }
 
         if compiler.is_like_msvc() {
-            cfg.define("HAVE_MSC_THREAD_LOCAL_STORAGE", Some("1"));
             cfg.define("HAVE_COMPILER__FUNC__", Some("1"));
+            cfg.define("HAVE_MSC_THREAD_LOCAL_STORAGE", Some("1"));
         }
 
         std::fs::write(include.join("config.h"), "// nothing").unwrap();
+
+        let version = std::fs::read_to_string("vendored/include/libssh/libssh_version.h.cmake")
+            .unwrap()
+            .replace("@libssh_VERSION_MAJOR@", "0")
+            .replace("@libssh_VERSION_MINOR@", "8")
+            .replace("@libssh_VERSION_PATCH@", "90");
+
+        std::fs::create_dir_all(include.join("libssh")).unwrap();
+        std::fs::write(include.join("libssh/libssh_version.h"), version).unwrap();
 
         println!("cargo:rerun-if-env-changed=DEP_Z_INCLUDE");
         if let Some(path) = std::env::var_os("DEP_Z_INCLUDE") {

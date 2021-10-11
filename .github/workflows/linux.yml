@@ -26,7 +26,7 @@ jobs:
         profile: minimal
         toolchain: stable
     - name: Install libssh
-      run: apt install libssh-dev
+      run: sudo apt install libssh-dev
     - name: Build and test
       run: |
         rustc -V
