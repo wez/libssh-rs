@@ -1,4 +1,4 @@
-name: Windows
+name: linux
 
 on:
   push:
@@ -13,10 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2016, windows-2019]
-        env:
-        - TARGET: x86_64-pc-windows-msvc
-        - TARGET: i686-pc-windows-msvc
+        os: [ubuntu-20.04, ubuntu-18.04, macos-10.14]
     runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
@@ -27,13 +24,12 @@ jobs:
       with:
         profile: minimal
         toolchain: stable
-        override: true
-        target: ${{ matrix.env.TARGET }}
+    - name: Install libssh
+      run: apt install libssh-dev
     - name: Build and test
-      env:
-        TARGET: ${{ matrix.env.TARGET }}
       run: |
         rustc -V
         cargo -V
-        cargo run --target %TARGET% --example link --features vendored,vendored-openssl
-      shell: cmd
+        cargo test
+        cargo run --example link --features vendored
+        cargo run --example link --features vendored,vendored-openssl
