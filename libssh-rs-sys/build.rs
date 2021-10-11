@@ -28,7 +28,7 @@ fn main() {
         cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
-        cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
+        // cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
         cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
         cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
         cfg.define("HAVE_STDINT_H", Some("1"));
@@ -36,7 +36,7 @@ fn main() {
 
         if target.contains("windows") {
             cfg.define("HAVE_IO_H", Some("1"));
-            cfg.define("HAVE_MEMSET_S", Some("1"));
+            // cfg.define("HAVE_MEMSET_S", Some("1"));
             cfg.define("HAVE_SECURE_ZERO_MEMORY", Some("1"));
             cfg.define("HAVE__SNPRINTF", Some("1"));
             cfg.define("HAVE__SNPRINTF_S", Some("1"));
@@ -95,6 +95,12 @@ fn main() {
         if let Some(path) = std::env::var_os("DEP_Z_INCLUDE") {
             cfg.include(path);
         }
+        if let Some(zlib_root) = std::env::var_os("DEP_Z_ROOT") {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                PathBuf::from(zlib_root).join("lib").to_str().unwrap()
+            );
+        }
 
         println!("cargo:rerun-if-env-changed=DEP_OPENSSL_INCLUDE");
         if let Some(path) = std::env::var_os("DEP_OPENSSL_INCLUDE") {
@@ -106,14 +112,21 @@ fn main() {
                 }
             }
         }
-
-        /*
-        for (k, v) in std::env::vars() {
-            if k.starts_with("CARGO") || k.starts_with("DEP") {
-                println!("{}={}", k, v);
-            }
+        if let Some(zlib_root) = std::env::var_os("DEP_OPENSSL_ROOT") {
+            println!(
+                "cargo:rustc-link-search=native={}",
+                PathBuf::from(zlib_root).join("lib").to_str().unwrap()
+            );
         }
-        */
+
+        if false {
+            for (k, v) in std::env::vars() {
+                if k.starts_with("CARGO") || k.starts_with("DEP") {
+                    eprintln!("{}={}", k, v);
+                }
+            }
+            panic!("boo");
+        }
 
         cfg.warnings(false);
         for f in &[
@@ -123,9 +136,11 @@ fn main() {
             "bignum.c",
             "buffer.c",
             "callbacks.c",
+            "chachapoly.c",
             "channels.c",
             "client.c",
             "config.c",
+            "config_parser.c",
             "connect.c",
             "connector.c",
             "crypto_common.c",
@@ -134,13 +149,23 @@ fn main() {
             "dh_crypto.c",
             "ecdh.c",
             "error.c",
+            "external/bcrypt_pbkdf.c",
+            "external/blowfish.c",
+            "external/chacha.c",
+            "external/ed25519.c",
+            "external/fe25519.c",
+            "external/ge25519.c",
+            "external/poly1305.c",
+            "external/sc25519.c",
             "getpass.c",
+            "gzip.c",
             "init.c",
             "kdf.c",
             "kex.c",
             "known_hosts.c",
             "knownhosts.c",
             "legacy.c",
+            "libcrypto.c",
             "log.c",
             "match.c",
             "messages.c",
@@ -152,19 +177,19 @@ fn main() {
             "pcap.c",
             "pki.c",
             "pki_container_openssh.c",
+            "pki_crypto.c",
+            "pki_ed25519.c",
+            "pki_ed25519_common.c",
             "poll.c",
-            "session.c",
             "scp.c",
+            "session.c",
             "socket.c",
             "string.c",
             "threads.c",
-            "wrapper.c",
-            "external/bcrypt_pbkdf.c",
-            "external/blowfish.c",
-            "config_parser.c",
-            "token.c",
-            "pki_ed25519_common.c",
+            "threads/libcrypto.c",
             "threads/noop.c",
+            "token.c",
+            "wrapper.c",
         ] {
             cfg.file(&format!("vendored/src/{}", f));
         }
@@ -178,13 +203,13 @@ fn main() {
         cfg.compile("libssh");
 
         if target.contains("windows") {
-            println!("cargo:rustc-link-lib=bcrypt");
+            println!("cargo:rustc-link-lib=libcrypto");
+            println!("cargo:rustc-link-lib=libssl");
             println!("cargo:rustc-link-lib=crypt32");
             println!("cargo:rustc-link-lib=user32");
+            println!("cargo:rustc-link-lib=shell32");
             println!("cargo:rustc-link-lib=ntdll");
-            println!("cargo:rustc-link-lib=libssl");
-            println!("cargo:rustc-link-lib=libcrypto");
-            println!("cargo:rustc-link-lib=libz");
+            println!("cargo:rustc-link-lib=z");
         } else {
             println!("cargo:rustc-link-lib=ssl");
             println!("cargo:rustc-link-lib=crypto");
