@@ -182,11 +182,14 @@ fn main() {
             println!("cargo:rustc-link-lib=crypt32");
             println!("cargo:rustc-link-lib=user32");
             println!("cargo:rustc-link-lib=ntdll");
+            println!("cargo:rustc-link-lib=libssl");
+            println!("cargo:rustc-link-lib=libcrypto");
+            println!("cargo:rustc-link-lib=libz");
+        } else {
+            println!("cargo:rustc-link-lib=ssl");
+            println!("cargo:rustc-link-lib=crypto");
+            println!("cargo:rustc-link-lib=z");
         }
-
-        println!("cargo:rustc-link-lib=ssl");
-        println!("cargo:rustc-link-lib=crypto");
-        println!("cargo:rustc-link-lib=z");
     } else {
         pkg_config::Config::new()
             .atleast_version("0.8")
