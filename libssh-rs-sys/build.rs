@@ -32,7 +32,6 @@ fn main() {
         cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
         cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
         cfg.define("HAVE_STDINT_H", Some("1"));
-        cfg.define("HAVE_SYS_TIME_H", Some("1"));
         cfg.define("WITH_ZLIB", Some("1"));
 
         if target.contains("windows") {
@@ -52,6 +51,7 @@ fn main() {
             cfg.define("HAVE_SELECT", Some("1"));
             cfg.define("HAVE_SNPRINTF", Some("1"));
             cfg.define("HAVE_STRTOULL", Some("1"));
+            cfg.define("HAVE_SYS_TIME_H", Some("1"));
             cfg.define("HAVE_TERMIOS_H", Some("1"));
             cfg.define("HAVE_UNISTD_H", Some("1"));
             cfg.define("HAVE_VSNPRINTF", Some("1"));
