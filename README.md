@@ -7,8 +7,9 @@ This repo is home to the `libssh-rs-sys` crate, which provides FFI bindings to `
 ## Features
 
 The `vendored` feature causes a static version of libssh to be compiled and linked into your program.
-
 The `vendored-openssl` feature causes a vendored copy of `openssl` to be compiled and linked into your program.
+
+On macOS and Windows systems, you most likely want to enable both `vendored` and `vendored-openssl`.
 
 ## License
 

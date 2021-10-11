@@ -44,6 +44,7 @@ fn main() {
             cfg.define("HAVE__STRTOUI64", Some("1"));
             cfg.define("HAVE__VSNPRINTF", Some("1"));
             cfg.define("HAVE__VSNPRINTF_S", Some("1"));
+            cfg.define("HAVE_ISBLANK", Some("1"));
         } else {
             cfg.define("HAVE_ARPA_INET_H", Some("1"));
             cfg.define("HAVE_CLOCK_GETTIME", Some("1"));
@@ -58,9 +59,6 @@ fn main() {
             if !target.contains("darwin") {
                 cfg.define("HAVE_POLL", Some("1"));
             }
-        }
-        if target.contains("darwin") {
-            cfg.define("HAVE_SYS_UTIME_H", Some("1"));
         }
         if target.contains("linux") {
             cfg.define("HAVE_STRNDUP", Some("1"));
