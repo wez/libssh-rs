@@ -1,0 +1,4 @@
+.*.swp*
+/src/binding.h
+/target
+Cargo.lock

@@ -1,0 +1,21 @@
+[package]
+name = "libssh-rs-sys"
+version = "0.1.0"
+authors = ["Wez Furlong"]
+edition = "2018"
+links = "libssh"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[build-dependencies]
+pkg-config = "0.3"
+cc = "1.0"
+
+[dependencies]
+libz-sys = { optional=true, version = "1.1", default-features = false, features = ["libc"] }
+openssl-sys = { version="0.9", optional = true }
+
+[features]
+vendored = ["libz-sys", "openssl-sys"]
+vendored-openssl = ["openssl-sys/vendored"]
+
