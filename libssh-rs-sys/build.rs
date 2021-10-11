@@ -63,6 +63,10 @@ fn main() {
         if target.contains("linux") {
             cfg.define("HAVE_STRNDUP", Some("1"));
         }
+        if target.contains("darwin") {
+            cfg.define("HAVE_NTOHLL", Some("1"));
+            cfg.define("HAVE_HTONLL", Some("1"));
+        }
 
         let compiler = cfg.get_compiler();
         if compiler.is_like_gnu() {
