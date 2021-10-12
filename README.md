@@ -1,5 +1,9 @@
 # libssh-rs
 
+[![Build Status](https://github.com/wez/libssh-rs/workflows/Linux/badge.svg)](https://github.com/wez/libssh-rs/actions?workflow=Linux)
+[![Build Status](https://github.com/wez/libssh-rs/workflows/Windows/badge.svg)](https://github.com/wez/libssh-rs/actions?workflow=Windows)
+[![Build Status](https://github.com/wez/libssh-rs/workflows/macOS/badge.svg)](https://github.com/wez/libssh-rs/actions?workflow=macOS)
+
 Bindings to [libssh](https://www.libssh.org/).
 
 This repo is home to the `libssh-rs-sys` crate, which provides FFI bindings to `libssh`.
