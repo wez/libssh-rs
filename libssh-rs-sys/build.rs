@@ -29,7 +29,7 @@ fn main() {
         cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
         // cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
-        cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
+        // cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
         cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
         cfg.define("HAVE_STDINT_H", Some("1"));
         cfg.define("WITH_ZLIB", Some("1"));
@@ -219,6 +219,9 @@ fn main() {
         pkg_config::Config::new()
             .atleast_version("0.8")
             .probe("libssh")
-            .expect("dynamically linked libssh >= 0.8 is required");
+            .expect(
+                "dynamically linked libssh >= 0.8 is required. \
+                    Alternatively enabled the 'vendored' to build the vendored library sources.",
+            );
     }
 }
