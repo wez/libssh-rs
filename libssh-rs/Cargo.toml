@@ -8,6 +8,7 @@ edition = "2018"
 [dependencies]
 libssh-rs-sys = { version = "0.1", path = "../libssh-rs-sys" }
 thiserror = "1.0"
+bitflags = "1.3"
 
 [features]
 vendored = ["libssh-rs-sys/vendored"]

@@ -24,6 +24,8 @@ fn main() {
         cfg.define("HAVE_OPENSSL_ECC", Some("1"));
         cfg.define("HAVE_OPENSSL_ECDH_H", Some("1"));
         cfg.define("HAVE_OPENSSL_ECDSA_H", Some("1"));
+        cfg.define("HAVE_ECC", Some("1"));
+        cfg.define("HAVE_DSA", Some("1"));
         cfg.define("HAVE_OPENSSL_EC_H", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
@@ -33,6 +35,8 @@ fn main() {
         cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
         cfg.define("HAVE_STDINT_H", Some("1"));
         cfg.define("WITH_ZLIB", Some("1"));
+        cfg.define("WITH_GEX", Some("1"));
+        cfg.define("WITH_SFTP", Some("1"));
 
         if target.contains("windows") {
             cfg.define("HAVE_IO_H", Some("1"));
@@ -48,6 +52,7 @@ fn main() {
             cfg.define("HAVE_ARPA_INET_H", Some("1"));
             cfg.define("HAVE_CLOCK_GETTIME", Some("1"));
             cfg.define("HAVE_PTHREAD_H", Some("1"));
+            cfg.define("HAVE_PTHREAD", Some("1"));
             cfg.define("HAVE_SELECT", Some("1"));
             cfg.define("HAVE_SNPRINTF", Some("1"));
             cfg.define("HAVE_STRTOULL", Some("1"));
@@ -145,13 +150,16 @@ fn main() {
             "connector.c",
             "crypto_common.c",
             "curve25519.c",
+            "dh-gex.c",
             "dh.c",
             "dh_crypto.c",
             "ecdh.c",
+            "ecdh_crypto.c",
             "error.c",
             "external/bcrypt_pbkdf.c",
             "external/blowfish.c",
             "external/chacha.c",
+            "external/curve25519_ref.c",
             "external/ed25519.c",
             "external/fe25519.c",
             "external/ge25519.c",
