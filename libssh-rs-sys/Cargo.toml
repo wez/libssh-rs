@@ -13,7 +13,8 @@ cc = "1.0"
 
 [dependencies]
 libz-sys = { optional=true, version = "1.1", default-features = false, features = ["libc"] }
-openssl-sys = { version="0.9", optional = true }
+# We can remove my fork once openssl-sys points at openssl-src 300+
+openssl-sys = { git="https://github.com/wez/rust-openssl.git", branch="openssl-src-300", optional = true }
 
 [features]
 vendored = ["libz-sys", "openssl-sys"]
