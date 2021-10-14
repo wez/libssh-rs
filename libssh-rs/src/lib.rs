@@ -295,6 +295,23 @@ impl Session {
         }
     }
 
+    fn auth_result(&self, res: sys::ssh_auth_e, what: &str) -> SshResult<AuthStatus> {
+        match res {
+            sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
+            sys::ssh_auth_e_SSH_AUTH_DENIED => Ok(AuthStatus::Denied),
+            sys::ssh_auth_e_SSH_AUTH_PARTIAL => Ok(AuthStatus::Partial),
+            sys::ssh_auth_e_SSH_AUTH_INFO => Ok(AuthStatus::Info),
+            sys::ssh_auth_e_SSH_AUTH_AGAIN => Ok(AuthStatus::Again),
+            sys::ssh_auth_e_SSH_AUTH_ERROR | _ => {
+                if let Some(err) = self.last_error() {
+                    Err(err)
+                } else {
+                    Err(Error::Fatal(what.to_string()))
+                }
+            }
+        }
+    }
+
     pub fn userauth_public_key_auto(
         &self,
         username: Option<&str>,
@@ -311,40 +328,14 @@ impl Session {
             )
         };
 
-        match res {
-            sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
-            sys::ssh_auth_e_SSH_AUTH_DENIED => Ok(AuthStatus::Denied),
-            sys::ssh_auth_e_SSH_AUTH_PARTIAL => Ok(AuthStatus::Partial),
-            sys::ssh_auth_e_SSH_AUTH_INFO => Ok(AuthStatus::Info),
-            sys::ssh_auth_e_SSH_AUTH_AGAIN => Ok(AuthStatus::Again),
-            sys::ssh_auth_e_SSH_AUTH_ERROR | _ => {
-                if let Some(err) = self.last_error() {
-                    Err(err)
-                } else {
-                    Err(Error::Fatal("authentication error".to_string()))
-                }
-            }
-        }
+        self.auth_result(res, "authentication error")
     }
 
     pub fn userauth_none(&self, username: Option<&str>) -> SshResult<AuthStatus> {
         let username = opt_str_to_cstring(username);
         let res = unsafe { sys::ssh_userauth_none(self.sess, opt_cstring_to_cstr(&username)) };
 
-        match res {
-            sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
-            sys::ssh_auth_e_SSH_AUTH_DENIED => Ok(AuthStatus::Denied),
-            sys::ssh_auth_e_SSH_AUTH_PARTIAL => Ok(AuthStatus::Partial),
-            sys::ssh_auth_e_SSH_AUTH_INFO => Ok(AuthStatus::Info),
-            sys::ssh_auth_e_SSH_AUTH_AGAIN => Ok(AuthStatus::Again),
-            sys::ssh_auth_e_SSH_AUTH_ERROR | _ => {
-                if let Some(err) = self.last_error() {
-                    Err(err)
-                } else {
-                    Err(Error::Fatal("authentication error".to_string()))
-                }
-            }
-        }
+        self.auth_result(res, "authentication error")
     }
 
     pub fn userauth_list(&self, username: Option<&str>) -> SshResult<AuthMethods> {
@@ -425,20 +416,7 @@ impl Session {
                 opt_cstring_to_cstr(&sub_methods),
             )
         };
-        match res {
-            sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
-            sys::ssh_auth_e_SSH_AUTH_DENIED => Ok(AuthStatus::Denied),
-            sys::ssh_auth_e_SSH_AUTH_PARTIAL => Ok(AuthStatus::Partial),
-            sys::ssh_auth_e_SSH_AUTH_INFO => Ok(AuthStatus::Info),
-            sys::ssh_auth_e_SSH_AUTH_AGAIN => Ok(AuthStatus::Again),
-            sys::ssh_auth_e_SSH_AUTH_ERROR | _ => {
-                if let Some(err) = self.last_error() {
-                    Err(err)
-                } else {
-                    Err(Error::Fatal("authentication error".to_string()))
-                }
-            }
-        }
+        self.auth_result(res, "authentication error")
     }
 
     pub fn userauth_password(
@@ -455,20 +433,7 @@ impl Session {
                 opt_cstring_to_cstr(&password),
             )
         };
-        match res {
-            sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
-            sys::ssh_auth_e_SSH_AUTH_DENIED => Ok(AuthStatus::Denied),
-            sys::ssh_auth_e_SSH_AUTH_PARTIAL => Ok(AuthStatus::Partial),
-            sys::ssh_auth_e_SSH_AUTH_INFO => Ok(AuthStatus::Info),
-            sys::ssh_auth_e_SSH_AUTH_AGAIN => Ok(AuthStatus::Again),
-            sys::ssh_auth_e_SSH_AUTH_ERROR | _ => {
-                if let Some(err) = self.last_error() {
-                    Err(err)
-                } else {
-                    Err(Error::Fatal("authentication error".to_string()))
-                }
-            }
-        }
+        self.auth_result(res, "authentication error")
     }
 }
 
