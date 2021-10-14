@@ -46,15 +46,7 @@ impl Channel {
     }
 
     fn basic_status(&self, res: i32, what: &str) -> SshResult<()> {
-        if res == sys::SSH_OK as i32 {
-            Ok(())
-        } else if res == sys::SSH_AGAIN {
-            Err(Error::TryAgain)
-        } else if let Some(err) = self.last_error() {
-            Err(err)
-        } else {
-            Err(Error::Fatal(what.to_string()))
-        }
+        self.sess.basic_status(res, what)
     }
 
     /// Close a channel.
@@ -171,6 +163,18 @@ impl Channel {
         self.basic_status(res, "ssh_channel_request_exec failed")
     }
 
+    /// Informs the server that the local size of the PTY has changed
+    pub fn change_pty_size(&self, columns: u32, rows: u32) -> SshResult<()> {
+        let res = unsafe {
+            sys::ssh_channel_change_pty_size(
+                self.chan,
+                columns.try_into().unwrap(),
+                rows.try_into().unwrap(),
+            )
+        };
+        self.basic_status(res, "ssh_channel_change_pty_size failed")
+    }
+
     /// Send a break signal to the server (as described in RFC 4335).
     /// Sends a break signal to the remote process. Note, that remote
     /// system may not support breaks. In such a case this request will
@@ -226,6 +230,34 @@ impl Channel {
             )
         };
         self.basic_status(res, "ssh_channel_open_forward failed")
+    }
+
+    /// Open a UNIX domain socket forwarding channel.
+    /// `remote_path` is the path to the unix socket to open on the remote
+    /// machine.
+    /// `source_host` and `source_port` identify the originating connection
+    /// from the client machine and are used for logging purposes.
+    ///
+    /// This function does not bind the source and does not
+    /// automatically forward the content of a socket to the channel.
+    /// You still have to read/write this channel object to achieve that.
+    pub fn open_forward_unix(
+        &self,
+        remote_path: &str,
+        source_host: &str,
+        source_port: u16,
+    ) -> SshResult<()> {
+        let remote_path = CString::new(remote_path).map_err(|e| Error::Fatal(e.to_string()))?;
+        let source_host = CString::new(source_host).map_err(|e| Error::Fatal(e.to_string()))?;
+        let res = unsafe {
+            sys::ssh_channel_open_forward_unix(
+                self.chan,
+                remote_path.as_ptr(),
+                source_host.as_ptr(),
+                source_port as i32,
+            )
+        };
+        self.basic_status(res, "ssh_channel_open_forward_unix failed")
     }
 
     /// Sends the "x11-req" channel request over an existing session channel.
@@ -393,7 +425,12 @@ pub struct ChannelStdin<'a> {
 
 impl<'a> std::io::Write for ChannelStdin<'a> {
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
+        self.chan.sess.blocking_flush(None).map_err(|e| match e {
+            Error::TryAgain => std::io::Error::new(std::io::ErrorKind::WouldBlock, "TryAgain"),
+            Error::RequestDenied(msg) | Error::Fatal(msg) => {
+                std::io::Error::new(std::io::ErrorKind::Other, msg)
+            }
+        })
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {

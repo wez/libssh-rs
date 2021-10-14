@@ -7,6 +7,7 @@ use std::os::unix::io::RawFd as RawSocket;
 use std::os::windows::io::RawSocket;
 use std::sync::Arc;
 use std::sync::Once;
+use std::time::Duration;
 use thiserror::Error;
 
 mod channel;
@@ -87,6 +88,27 @@ impl SessionHolder {
             Some(Error::Fatal(reason))
         }
     }
+
+    fn basic_status(&self, res: i32, what: &str) -> SshResult<()> {
+        if res == sys::SSH_OK as i32 {
+            Ok(())
+        } else if res == sys::SSH_AGAIN {
+            Err(Error::TryAgain)
+        } else if let Some(err) = self.last_error() {
+            Err(err)
+        } else {
+            Err(Error::Fatal(what.to_string()))
+        }
+    }
+
+    fn blocking_flush(&self, timeout: Option<Duration>) -> SshResult<()> {
+        let timeout = match timeout {
+            Some(t) => t.as_millis() as c_int,
+            None => -1,
+        };
+        let res = unsafe { sys::ssh_blocking_flush(self.sess, timeout) };
+        self.basic_status(res, "blocking_flush")
+    }
 }
 
 pub struct Session {
@@ -119,6 +141,12 @@ impl Session {
                 chan,
             })
         }
+    }
+
+    /// Blocking flush of the outgoing buffer.
+    ///
+    pub fn blocking_flush(&self, timeout: Option<Duration>) -> SshResult<()> {
+        self.sess.blocking_flush(timeout)
     }
 
     /// Disconnect from a session (client or server). The session can then be reused to open a new session.
@@ -511,6 +539,47 @@ impl Session {
             ))
         }
     }
+
+    /// Returns a tuple of `(read_pending, write_pending)`.
+    /// If `read_pending` is true, then your OS polling mechanism
+    /// should request a wakeup when the socket is readable.
+    /// If `write_pending` is true, then your OS polling mechanism
+    /// should request a wakeup when the socket is writable.
+    ///
+    /// You can use the `AsRawFd` or `AsRawSocket` trait impl
+    /// to obtain the socket descriptor for polling purposes.
+    pub fn get_poll_state(&self) -> (bool, bool) {
+        let state = unsafe { sys::ssh_get_poll_flags(**self.sess) };
+        let read_pending = (state & sys::SSH_READ_PENDING as i32) != 0;
+        let write_pending = (state & sys::SSH_WRITE_PENDING as i32) != 0;
+        (read_pending, write_pending)
+    }
+
+    pub fn is_blocking(&self) -> bool {
+        unsafe { sys::ssh_is_blocking(**self.sess) != 0 }
+    }
+
+    pub fn set_blocking(&self, blocking: bool) {
+        unsafe { sys::ssh_set_blocking(**self.sess, if blocking { 1 } else { 0 }) }
+    }
+
+    pub fn is_connected(&self) -> bool {
+        unsafe { sys::ssh_is_connected(**self.sess) != 0 }
+    }
+}
+
+#[cfg(unix)]
+impl std::os::unix::io::AsRawFd for Session {
+    fn as_raw_fd(&self) -> RawSocket {
+        unsafe { sys::ssh_get_fd(**self.sess) }
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for Session {
+    fn as_raw_socket(&self) -> RawSocket {
+        unsafe { sys::ssh_get_fd(**self.sess) }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -638,7 +707,7 @@ pub enum SshOption {
     AddIdentity(String),
 
     /// Set a timeout for the connection
-    Timeout(std::time::Duration),
+    Timeout(Duration),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
