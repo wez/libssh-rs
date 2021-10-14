@@ -117,8 +117,8 @@ impl Channel {
     /// Set environment variable.
     /// Some environment variables may be refused by security reasons.
     pub fn request_env(&self, name: &str, value: &str) -> SshResult<()> {
-        let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
-        let value = CString::new(value).map_err(|e| Error::Fatal(e.to_string()))?;
+        let name = CString::new(name)?;
+        let value = CString::new(value)?;
         let res = unsafe { sys::ssh_channel_request_env(self.chan, name.as_ptr(), value.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_env failed")
     }
@@ -133,14 +133,14 @@ impl Channel {
     /// Run a shell command without an interactive shell.
     /// This is similar to 'sh -c command'.
     pub fn request_exec(&self, command: &str) -> SshResult<()> {
-        let command = CString::new(command).map_err(|e| Error::Fatal(e.to_string()))?;
+        let command = CString::new(command)?;
         let res = unsafe { sys::ssh_channel_request_exec(self.chan, command.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_exec failed")
     }
 
     /// Request a subsystem
     pub fn request_subsystem(&self, subsys: &str) -> SshResult<()> {
-        let subsys = CString::new(subsys).map_err(|e| Error::Fatal(e.to_string()))?;
+        let subsys = CString::new(subsys)?;
         let res = unsafe { sys::ssh_channel_request_subsystem(self.chan, subsys.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_subsystem failed")
     }
@@ -151,7 +151,7 @@ impl Channel {
     /// `term = "xterm"`, `columns = 80` and `rows = 24` are reasonable
     /// defaults.
     pub fn request_pty_size(&self, term: &str, columns: u32, rows: u32) -> SshResult<()> {
-        let term = CString::new(term).map_err(|e| Error::Fatal(e.to_string()))?;
+        let term = CString::new(term)?;
         let res = unsafe {
             sys::ssh_channel_request_pty_size(
                 self.chan,
@@ -197,7 +197,7 @@ impl Channel {
     /// release in 2019.
     /// <https://bugzilla.mindrot.org/show_bug.cgi?id=1424>
     pub fn request_send_signal(&self, signal: &str) -> SshResult<()> {
-        let signal = CString::new(signal).map_err(|e| Error::Fatal(e.to_string()))?;
+        let signal = CString::new(signal)?;
         let res = unsafe { sys::ssh_channel_request_send_signal(self.chan, signal.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_send_signal failed")
     }
@@ -218,8 +218,8 @@ impl Channel {
         source_host: &str,
         source_port: u16,
     ) -> SshResult<()> {
-        let remote_host = CString::new(remote_host).map_err(|e| Error::Fatal(e.to_string()))?;
-        let source_host = CString::new(source_host).map_err(|e| Error::Fatal(e.to_string()))?;
+        let remote_host = CString::new(remote_host)?;
+        let source_host = CString::new(source_host)?;
         let res = unsafe {
             sys::ssh_channel_open_forward(
                 self.chan,
@@ -247,8 +247,8 @@ impl Channel {
         source_host: &str,
         source_port: u16,
     ) -> SshResult<()> {
-        let remote_path = CString::new(remote_path).map_err(|e| Error::Fatal(e.to_string()))?;
-        let source_host = CString::new(source_host).map_err(|e| Error::Fatal(e.to_string()))?;
+        let remote_path = CString::new(remote_path)?;
+        let source_host = CString::new(source_host)?;
         let res = unsafe {
             sys::ssh_channel_open_forward_unix(
                 self.chan,
@@ -311,7 +311,7 @@ impl Channel {
                 if let Some(err) = self.last_error() {
                     Err(err)
                 } else {
-                    Err(Error::Fatal("ssh_channel_poll failed".to_string()))
+                    Err(Error::fatal("ssh_channel_poll failed"))
                 }
             }
             sys::SSH_EOF => Ok(PollStatus::EndOfFile),
@@ -349,7 +349,7 @@ impl Channel {
                 if let Some(err) = self.last_error() {
                     Err(err)
                 } else {
-                    Err(Error::Fatal("ssh_channel_read_timeout failed".to_string()))
+                    Err(Error::fatal("ssh_channel_read_timeout failed"))
                 }
             }
             sys::SSH_AGAIN => Err(Error::TryAgain),
@@ -362,13 +362,7 @@ impl Channel {
     }
 
     fn read_impl(&self, buf: &mut [u8], is_stderr: bool) -> std::io::Result<usize> {
-        self.read_timeout(buf, is_stderr, None)
-            .map_err(|e| match e {
-                Error::TryAgain => std::io::Error::new(std::io::ErrorKind::WouldBlock, "TryAgain"),
-                Error::RequestDenied(msg) | Error::Fatal(msg) => {
-                    std::io::Error::new(std::io::ErrorKind::Other, msg)
-                }
-            })
+        Ok(self.read_timeout(buf, is_stderr, None)?)
     }
 
     fn write_impl(&self, buf: &[u8], is_stderr: bool) -> SshResult<usize> {
@@ -385,7 +379,7 @@ impl Channel {
                 if let Some(err) = self.last_error() {
                     Err(err)
                 } else {
-                    Err(Error::Fatal("ssh_channel_read_timeout failed".to_string()))
+                    Err(Error::fatal("ssh_channel_read_timeout failed"))
                 }
             }
             sys::SSH_AGAIN => Err(Error::TryAgain),
@@ -425,21 +419,11 @@ pub struct ChannelStdin<'a> {
 
 impl<'a> std::io::Write for ChannelStdin<'a> {
     fn flush(&mut self) -> std::io::Result<()> {
-        self.chan.sess.blocking_flush(None).map_err(|e| match e {
-            Error::TryAgain => std::io::Error::new(std::io::ErrorKind::WouldBlock, "TryAgain"),
-            Error::RequestDenied(msg) | Error::Fatal(msg) => {
-                std::io::Error::new(std::io::ErrorKind::Other, msg)
-            }
-        })
+        Ok(self.chan.sess.blocking_flush(None)?)
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.chan.write_impl(buf, false).map_err(|e| match e {
-            Error::TryAgain => std::io::Error::new(std::io::ErrorKind::WouldBlock, "TryAgain"),
-            Error::RequestDenied(msg) | Error::Fatal(msg) => {
-                std::io::Error::new(std::io::ErrorKind::Other, msg)
-            }
-        })
+        Ok(self.chan.write_impl(buf, false)?)
     }
 }
 

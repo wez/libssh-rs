@@ -8,11 +8,12 @@ use std::os::windows::io::RawSocket;
 use std::sync::Arc;
 use std::sync::Once;
 use std::time::Duration;
-use thiserror::Error;
 
 mod channel;
+mod error;
 
 pub use crate::channel::*;
+pub use crate::error::*;
 
 struct LibraryState {}
 impl LibraryState {
@@ -38,27 +39,6 @@ fn initialize() {
         let lib = LibraryState::new();
         LIB.replace(lib);
     });
-}
-
-#[derive(Error, Debug, PartialEq, Eq)]
-pub enum Error {
-    /// The last request was denied but situation is recoverable
-    #[error("RequestDenied: {}", .0)]
-    RequestDenied(String),
-    /// A fatal error occurred. This could be an unexpected disconnection
-    #[error("Fatal: {}", .0)]
-    Fatal(String),
-    /// The session is in non-blocking mode and the call must be tried again
-    #[error("TryAgain")]
-    TryAgain,
-}
-
-pub type SshResult<T> = Result<T, Error>;
-
-impl Error {
-    pub fn is_try_again(&self) -> bool {
-        matches!(self, Self::TryAgain)
-    }
 }
 
 pub(crate) struct SessionHolder {
@@ -112,7 +92,7 @@ impl SessionHolder {
         } else if let Some(err) = self.last_error() {
             Err(err)
         } else {
-            Err(Error::Fatal(what.to_string()))
+            Err(Error::fatal(what))
         }
     }
 
@@ -148,7 +128,7 @@ impl Session {
             if let Some(err) = self.last_error() {
                 Err(err)
             } else {
-                Err(Error::Fatal("ssh_channel_new failed".to_string()))
+                Err(Error::fatal("ssh_channel_new failed"))
             }
         } else {
             Ok(Channel {
@@ -171,20 +151,7 @@ impl Session {
 
     pub fn connect(&self) -> SshResult<()> {
         let res = unsafe { sys::ssh_connect(**self.sess) };
-        if res == sys::SSH_OK as i32 {
-            Ok(())
-        } else if res == sys::SSH_AGAIN {
-            Err(Error::TryAgain)
-        } else if let Some(err) = self.last_error() {
-            Err(err)
-        } else {
-            Err(Error::Fatal(format!(
-                "unexpected error result {} from \
-                     ssh_connect, and there is no recorded \
-                     error condition on the session",
-                res
-            )))
-        }
+        self.sess.basic_status(res, "ssh_connect failed")
     }
 
     /// Check if the servers public key for the connected session is known.
@@ -202,9 +169,7 @@ impl Session {
                 if let Some(err) = self.last_error() {
                     Err(err)
                 } else {
-                    Err(Error::Fatal(
-                        "unknown error in ssh_session_is_known_server".to_string(),
-                    ))
+                    Err(Error::fatal("unknown error in ssh_session_is_known_server"))
                 }
             }
         }
@@ -222,7 +187,7 @@ impl Session {
         } else if let Some(err) = self.last_error() {
             Err(err)
         } else {
-            Err(Error::Fatal("error updating known hosts file".to_string()))
+            Err(Error::fatal("error updating known hosts file"))
         }
     }
 
@@ -260,7 +225,7 @@ impl Session {
             if let Some(err) = self.last_error() {
                 Err(err)
             } else {
-                Err(Error::Fatal("error getting user name".to_string()))
+                Err(Error::fatal("error getting user name"))
             }
         } else {
             let user_name = unsafe { CStr::from_ptr(name) }
@@ -288,7 +253,7 @@ impl Session {
                 )
             },
             SshOption::Hostname(name) => unsafe {
-                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
+                let name = CString::new(name)?;
                 sys::ssh_options_set(
                     **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_HOST,
@@ -296,7 +261,7 @@ impl Session {
                 )
             },
             SshOption::BindAddress(name) => unsafe {
-                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
+                let name = CString::new(name)?;
                 sys::ssh_options_set(
                     **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_BINDADDR,
@@ -304,7 +269,7 @@ impl Session {
                 )
             },
             SshOption::AddIdentity(name) => unsafe {
-                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
+                let name = CString::new(name)?;
                 sys::ssh_options_set(
                     **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_ADD_IDENTITY,
@@ -367,7 +332,7 @@ impl Session {
         } else if let Some(err) = self.last_error() {
             Err(err)
         } else {
-            Err(Error::Fatal("failed to set option".to_string()))
+            Err(Error::fatal("failed to set option"))
         }
     }
 
@@ -381,7 +346,7 @@ impl Session {
         } else if let Some(err) = self.last_error() {
             Err(err)
         } else {
-            Err(Error::Fatal("failed to get server public key".to_string()))
+            Err(Error::fatal("failed to get server public key"))
         }
     }
 
@@ -396,7 +361,7 @@ impl Session {
                 if let Some(err) = self.last_error() {
                     Err(err)
                 } else {
-                    Err(Error::Fatal(what.to_string()))
+                    Err(Error::fatal(what))
                 }
             }
         }
@@ -474,8 +439,7 @@ impl Session {
 
     pub fn userauth_keyboard_interactive_set_answers(&self, answers: &[String]) -> SshResult<()> {
         for (idx, answer) in answers.iter().enumerate() {
-            let answer =
-                CString::new(answer.as_bytes()).map_err(|e| Error::Fatal(e.to_string()))?;
+            let answer = CString::new(answer.as_bytes())?;
 
             let res = unsafe {
                 sys::ssh_userauth_kbdint_setanswer(**self.sess, idx as u32, answer.as_ptr())
@@ -485,7 +449,7 @@ impl Session {
                 if let Some(err) = self.last_error() {
                     return Err(err);
                 }
-                return Err(Error::Fatal("error setting answer".to_string()));
+                return Err(Error::fatal("error setting answer"));
             }
         }
         Ok(())
@@ -549,9 +513,7 @@ impl Session {
         } else if let Some(err) = self.last_error() {
             Err(err)
         } else {
-            Err(Error::Fatal(
-                "error in ssh_channel_listen_forward".to_string(),
-            ))
+            Err(Error::fatal("error in ssh_channel_listen_forward"))
         }
     }
 
@@ -649,7 +611,7 @@ impl SshKey {
         };
 
         if res != 0 || bytes.is_null() {
-            Err(Error::Fatal("failed to get public key hash".to_string()))
+            Err(Error::fatal("failed to get public key hash"))
         } else {
             let data = unsafe { std::slice::from_raw_parts(bytes, len).to_vec() };
             unsafe {
@@ -663,8 +625,8 @@ impl SshKey {
         let bytes = self.get_public_key_hash(hash_type)?;
         let hexa = unsafe { sys::ssh_get_hexa(bytes.as_ptr(), bytes.len()) };
         if hexa.is_null() {
-            Err(Error::Fatal(
-                "failed to allocate bytes for hexa representation".to_string(),
+            Err(Error::fatal(
+                "failed to allocate bytes for hexa representation",
             ))
         } else {
             let res = unsafe { CStr::from_ptr(hexa) }
@@ -819,9 +781,6 @@ mod test {
     fn init() {
         let sess = Session::new();
         assert!(sess.last_error().is_none());
-        assert_eq!(
-            sess.connect(),
-            Err(Error::Fatal("Hostname required".to_string()))
-        );
+        assert_eq!(sess.connect(), Err(Error::fatal("Hostname required")));
     }
 }
