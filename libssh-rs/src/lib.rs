@@ -25,12 +25,13 @@ pub use crate::error::*;
 
 struct LibraryState {}
 impl LibraryState {
-    pub fn new() -> Self {
+    pub fn new() -> Option<Self> {
         let res = unsafe { sys::ssh_init() };
         if res != sys::SSH_OK as i32 {
-            panic!("ssh_init failed");
+            None
+        } else {
+            Some(Self {})
         }
-        Self {}
     }
 }
 impl Drop for LibraryState {
@@ -42,11 +43,15 @@ impl Drop for LibraryState {
 static INIT: Once = Once::new();
 static mut LIB: Option<LibraryState> = None;
 
-fn initialize() {
+fn initialize() -> SshResult<()> {
     INIT.call_once(|| unsafe {
-        let lib = LibraryState::new();
-        LIB.replace(lib);
+        LIB = LibraryState::new();
     });
+    if unsafe { LIB.is_none() } {
+        Err(Error::fatal("ssh_init failed"))
+    } else {
+        Ok(())
+    }
 }
 
 pub(crate) struct SessionHolder {
@@ -126,17 +131,15 @@ pub struct Session {
 
 impl Session {
     /// Create a new Session.
-    ///
-    /// # Panics
-    /// If the session could not be initialized (eg: no memory)
-    pub fn new() -> Self {
-        initialize();
+    pub fn new() -> SshResult<Self> {
+        initialize()?;
         let sess = unsafe { sys::ssh_new() };
         if sess.is_null() {
-            panic!("Out of memory when calling ssh_new");
-        }
-        Self {
-            sess: Arc::new(SessionHolder { sess }),
+            Err(Error::fatal("ssh_new failed"))
+        } else {
+            Ok(Self {
+                sess: Arc::new(SessionHolder { sess }),
+            })
         }
     }
 
@@ -995,7 +998,7 @@ mod test {
 
     #[test]
     fn init() {
-        let sess = Session::new();
+        let sess = Session::new().unwrap();
         assert!(!sess.is_connected());
         assert!(sess.last_error().is_none());
         assert_eq!(sess.connect(), Err(Error::fatal("Hostname required")));

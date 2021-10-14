@@ -27,6 +27,12 @@ impl Error {
     }
 }
 
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Error {
+        Error::fatal(err.to_string())
+    }
+}
+
 impl From<Error> for std::io::Error {
     fn from(err: Error) -> std::io::Error {
         match err {

@@ -41,9 +41,7 @@ fn prompt(prompt: &str, echo: bool) -> SshResult<String> {
 fn prompt_stdin(prompt: &str) -> SshResult<String> {
     eprintln!("{}", prompt);
     let mut input = String::new();
-    let _ = std::io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| Error::Fatal(format!("reading stdin: {:#}", e)))?;
+    let _ = std::io::stdin().read_line(&mut input)?;
     Ok(input.trim().to_string())
 }
 
@@ -107,7 +105,7 @@ fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
 }
 
 fn main() -> SshResult<()> {
-    let sess = Session::new();
+    let sess = Session::new()?;
     sess.set_option(SshOption::Hostname("localhost".to_string()))?;
     // sess.set_option(SshOption::LogLevel(LogLevel::Packet))?;
     sess.options_parse_config(None)?;
@@ -126,10 +124,7 @@ fn main() -> SshResult<()> {
     channel.send_eof()?;
 
     let mut stdout = String::new();
-    channel
-        .stdout()
-        .read_to_string(&mut stdout)
-        .map_err(|e| Error::Fatal(e.to_string()))?;
+    channel.stdout().read_to_string(&mut stdout)?;
 
     eprintln!("whoami -> {}", stdout);
 
