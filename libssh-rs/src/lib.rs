@@ -1,4 +1,12 @@
+//! This crate provides ergonomic bindings to the functions
+//! provided by [libssh](https://libssh.org), a library that provides
+//! an implementation of the SSH 2 protocol.  It is distinct from the
+//! `ssh2` rust crate which uses [libssh2](https://www.libssh2.org),
+//! which is an unrelated project that implements similar functionality!
+
+/// Re-exporting the underlying unsafe API, should you need it
 pub use libssh_rs_sys as sys;
+
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_int, c_uint, c_ulong};
 #[cfg(unix)]
@@ -106,11 +114,21 @@ impl SessionHolder {
     }
 }
 
+/// A Session represents the state needed to make a connection to
+/// a remote host.
+///
+/// You need at least one Session per target host.
+/// A given session can open multiple `Channel`s to perform multiple actions
+/// on a given target host.
 pub struct Session {
     sess: Arc<SessionHolder>,
 }
 
 impl Session {
+    /// Create a new Session.
+    ///
+    /// # Panics
+    /// If the session could not be initialized (eg: no memory)
     pub fn new() -> Self {
         initialize();
         let sess = unsafe { sys::ssh_new() };
@@ -122,6 +140,8 @@ impl Session {
         }
     }
 
+    /// Create a new channel.
+    /// Channels are used to handle I/O for commands and forwarded streams.
     pub fn new_channel(&self) -> SshResult<Channel> {
         let chan = unsafe { sys::ssh_channel_new(**self.sess) };
         if chan.is_null() {
@@ -139,7 +159,6 @@ impl Session {
     }
 
     /// Blocking flush of the outgoing buffer.
-    ///
     pub fn blocking_flush(&self, timeout: Option<Duration>) -> SshResult<()> {
         self.sess.blocking_flush(timeout)
     }
@@ -149,6 +168,7 @@ impl Session {
         unsafe { sys::ssh_disconnect(**self.sess) };
     }
 
+    /// Connect to the configured remote host
     pub fn connect(&self) -> SshResult<()> {
         let res = unsafe { sys::ssh_connect(**self.sess) };
         self.sess.basic_status(res, "ssh_connect failed")
@@ -216,6 +236,7 @@ impl Session {
         }
     }
 
+    /// Returns the user name that will be used to authenticate with the remote host
     pub fn get_user_name(&self) -> SshResult<String> {
         let mut name = std::ptr::null_mut();
         let res = unsafe {
@@ -236,6 +257,9 @@ impl Session {
         }
     }
 
+    /// Configures the session.
+    /// You will need to set at least `SshOption::Hostname` prior to
+    /// connecting, in order for libssh to know where to connect.
     pub fn set_option(&self, option: SshOption) -> SshResult<()> {
         let res = match option {
             SshOption::LogLevel(level) => unsafe {
@@ -336,8 +360,12 @@ impl Session {
         }
     }
 
-    /// This function allows you to get a hash of the public key. You can then print this hash in a human-readable form to the user so that he is able to verify it.
-    /// It is very important that you verify at some moment that the hash matches a known server. If you don't do it, cryptography wont help you at making things secure. OpenSSH uses SHA1 to print public key digests.
+    /// This function allows you to get a hash of the public key.
+    /// You can then print this hash in a human-readable form to the user
+    /// so that he is able to verify it.
+    /// It is very important that you verify at some moment that the hash
+    /// matches a known server. If you don't do it, cryptography wont help
+    /// you at making things secure. OpenSSH uses SHA1 to print public key digests.
     pub fn get_server_public_key(&self) -> SshResult<SshKey> {
         let mut key = std::ptr::null_mut();
         let res = unsafe { sys::ssh_get_server_publickey(**self.sess, &mut key) };
@@ -367,6 +395,20 @@ impl Session {
         }
     }
 
+    /// Try to automatically authenticate using public key authentication.
+    ///
+    /// This will attempt to use an ssh agent if available, and will then
+    /// attempt to use your keys/identities from your `~/.ssh` dir.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    ///
+    /// The `password` parameter can be used to pre-fill a password to
+    /// unlock the private key.  Leaving it set to `None` will cause
+    /// libssh to prompt for the passphrase.
     pub fn userauth_public_key_auto(
         &self,
         username: Option<&str>,
@@ -386,6 +428,18 @@ impl Session {
         self.auth_result(res, "authentication error")
     }
 
+    /// Try to perform `"none"` authentication.
+    ///
+    /// Typically, the server will not allow `none` auth to succeed, but it has
+    /// the side effect of informing the client which authentication methods
+    /// are available, so a full-featured client will call this prior to calling
+    /// `userauth_list`.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
     pub fn userauth_none(&self, username: Option<&str>) -> SshResult<AuthStatus> {
         let username = opt_str_to_cstring(username);
         let res = unsafe { sys::ssh_userauth_none(**self.sess, opt_cstring_to_cstr(&username)) };
@@ -393,6 +447,20 @@ impl Session {
         self.auth_result(res, "authentication error")
     }
 
+    /// Returns the permitted `AuthMethods`.
+    ///
+    /// The list is not available until after [userauth_none](#method.userauth_none)
+    /// has been called at least once.
+    ///
+    /// The list can change in response to authentication events; for example,
+    /// after successfully completing pubkey auth, the server may then require
+    /// keyboard interactive auth to enter a second authentication factor.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
     pub fn userauth_list(&self, username: Option<&str>) -> SshResult<AuthMethods> {
         let username = opt_str_to_cstring(username);
         Ok(unsafe {
@@ -403,6 +471,13 @@ impl Session {
         })
     }
 
+    /// After [userauth_keyboard_interactive](#method.userauth_keyboard_interactive)
+    /// has been called and returned `AuthStatus::Info`, this method must be called
+    /// to discover the prompts to questions that the server needs answered in order
+    /// to authenticate the session.
+    ///
+    /// It is then up to your application to obtain those answers and set them via
+    /// [userauth_keyboard_interactive_set_answers](#method.userauth_keyboard_interactive_set_answers).
     pub fn userauth_keyboard_interactive_info(&self) -> SshResult<InteractiveAuthInfo> {
         let name = unsafe { sys::ssh_userauth_kbdint_getname(**self.sess) };
         let name = unsafe { CStr::from_ptr(name) }
@@ -437,6 +512,13 @@ impl Session {
         })
     }
 
+    /// After [userauth_keyboard_interactive_info](#method.userauth_keyboard_interactive_info)
+    /// has been called, and your application has produced the answers to the prompts,
+    /// you must call this method to record those answers.
+    ///
+    /// You will then need to call
+    /// [userauth_keyboard_interactive](#method.userauth_keyboard_interactive) to present
+    /// those answers to the server and discover the next stage of authentication.
     pub fn userauth_keyboard_interactive_set_answers(&self, answers: &[String]) -> SshResult<()> {
         for (idx, answer) in answers.iter().enumerate() {
             let answer = CString::new(answer.as_bytes())?;
@@ -455,6 +537,28 @@ impl Session {
         Ok(())
     }
 
+    /// Initiates keyboard-interactive authentication.
+    ///
+    /// This appears similar to, but is not the same as password authentication.
+    /// You should prefer using keyboard-interactive authentication over password
+    /// auth.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    ///
+    /// `sub_methods` is not documented in the underlying libssh and
+    /// should almost always be `None`.
+    ///
+    /// If the returned `AuthStatus` is `Info`, then your application
+    /// should use [userauth_keyboard_interactive_info](#method.userauth_keyboard_interactive_info)
+    /// and use the results of that method to prompt the user to answer
+    /// the questions sent by the server, then
+    /// [userauth_keyboard_interactive_set_answers](#method.userauth_keyboard_interactive_set_answers)
+    /// to record the answers, before again calling this method to
+    /// present them to the server and determine the next steps.
     pub fn userauth_keyboard_interactive(
         &self,
         username: Option<&str>,
@@ -473,6 +577,20 @@ impl Session {
         self.auth_result(res, "authentication error")
     }
 
+    /// Initiates password based authentication.
+    ///
+    /// This appears similar to, but is not the same as keyboard-interactive
+    /// authentication. You should prefer using keyboard-interactive
+    /// authentication over password auth.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    ///
+    /// `password` should be a password entered by the user, or otherwise
+    /// securely communicated to your application.
     pub fn userauth_password(
         &self,
         username: Option<&str>,
@@ -491,12 +609,17 @@ impl Session {
     }
 
     /// Sends the "tcpip-forward" global request to ask the server
-    /// to begin listening for inbound connections.
+    /// to begin listening for inbound connections; this is for
+    /// *remote (or reverse) port forwarding*.
+    ///
     /// If `bind_address` is None then bind to all interfaces on
     /// the server side.  Otherwise, bind only to the specified address.
     /// If `port` is `0` then the server will pick a port to bind to,
     /// otherwise, will attempt to use the requested port.
     /// Returns the bound port number.
+    ///
+    /// Later in your program, you will use `Session::accept_forward` to
+    /// wait for a forwarded connection from the address you specified.
     pub fn listen_forward(&self, bind_address: Option<&str>, port: u16) -> SshResult<u16> {
         let bind_address = opt_str_to_cstring(bind_address);
         let mut bound_port = 0;
@@ -517,6 +640,33 @@ impl Session {
         }
     }
 
+    /// Accept a remote forwarded connection.
+    /// You must have called `Session::listen_forward` previously to set up
+    /// remote port forwarding.
+    /// Returns a tuple `(destination_port, Channel)`.
+    /// The destination port is so that you can distinguish between multiple
+    /// remote forwards and corresponds to the port returned from `listen_forward`.
+    pub fn accept_forward(&self, timeout: Duration) -> SshResult<(u16, Channel)> {
+        let mut port = 0;
+        let chan = unsafe {
+            sys::ssh_channel_accept_forward(**self.sess, timeout.as_millis() as _, &mut port)
+        };
+        if chan.is_null() {
+            if let Some(err) = self.last_error() {
+                Err(err)
+            } else {
+                Err(Error::TryAgain)
+            }
+        } else {
+            let channel = Channel {
+                sess: Arc::clone(&self.sess),
+                chan,
+            };
+
+            Ok((port as u16, channel))
+        }
+    }
+
     /// Returns a tuple of `(read_pending, write_pending)`.
     /// If `read_pending` is true, then your OS polling mechanism
     /// should request a wakeup when the socket is readable.
@@ -532,14 +682,21 @@ impl Session {
         (read_pending, write_pending)
     }
 
+    /// Returns `true` if the session is in blocking mode, `false` otherwise.
     pub fn is_blocking(&self) -> bool {
         unsafe { sys::ssh_is_blocking(**self.sess) != 0 }
     }
 
+    /// If `blocking == true` then set the session to block mode, otherwise
+    /// set it to non-blocking mode.
+    /// In non-blocking mode, a number of methods in the objects associated
+    /// with the session can return `Error::TryAgain`.
     pub fn set_blocking(&self, blocking: bool) {
         unsafe { sys::ssh_set_blocking(**self.sess, if blocking { 1 } else { 0 }) }
     }
 
+    /// Returns `true` if this session is in the connected state, `false`
+    /// otherwise.
     pub fn is_connected(&self) -> bool {
         unsafe { sys::ssh_is_connected(**self.sess) != 0 }
     }
@@ -559,26 +716,47 @@ impl std::os::windows::io::AsRawSocket for Session {
     }
 }
 
+/// Indicates the disposition of an authentication operation
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AuthStatus {
+    /// You have been fully authenticated and can now move on
+    /// to opening channels
     Success,
+    /// The authentication attempt failed. Perhaps retry, or
+    /// try an alternative auth method.
     Denied,
+    /// You've been partially authenticated.  Check `Session::userauth_list`
+    /// to determine which methods you should continue with.
     Partial,
+    /// There is additional information about how to proceed
+    /// with authentication.  For keyboard-interactive auth,
+    /// you will need to obtain auth prompts and provide answers
+    /// before you can continue.
     Info,
+    /// In non-blocking mode, you will need to try again as
+    /// the request couldn't be completed without blocking.
     Again,
 }
 
 bitflags::bitflags! {
+    /// bitflags that indicates permitted authentication methods
     pub struct AuthMethods : u32 {
+        /// The `"none"` authentication method is available.
         const NONE = sys::SSH_AUTH_METHOD_NONE;
+        /// The `"password"` authentication method is available.
         const PASSWORD = sys::SSH_AUTH_METHOD_PASSWORD;
+        /// The `"public-key"` authentication method is available.
         const PUBLIC_KEY = sys::SSH_AUTH_METHOD_PUBLICKEY;
+        /// Host-based authentication is available
         const HOST_BASED = sys::SSH_AUTH_METHOD_HOSTBASED;
+        /// keyboard-interactive authentication is available
         const INTERACTIVE = sys::SSH_AUTH_METHOD_INTERACTIVE;
+        /// GSSAPI authentication is available
         const GSSAPI_MIC = sys::SSH_AUTH_METHOD_GSSAPI_MIC;
     }
 }
 
+/// Represents the public key provided by the remote host
 pub struct SshKey {
     key: sys::ssh_key,
 }
@@ -590,6 +768,10 @@ impl Drop for SshKey {
 }
 
 impl SshKey {
+    /// Returns the public key hash in the requested format.
+    /// The hash is returned as binary bytes.
+    /// Consider using [get_public_key_hash_hexa](#method.get_public_key_hash_hexa)
+    /// to return it in a more human readable format.
     pub fn get_public_key_hash(&self, hash_type: PublicKeyHashType) -> SshResult<Vec<u8>> {
         let mut bytes = std::ptr::null_mut();
         let mut len = 0;
@@ -621,6 +803,7 @@ impl SshKey {
         }
     }
 
+    /// Returns the public key hash in a human readable form
     pub fn get_public_key_hash_hexa(&self, hash_type: PublicKeyHashType) -> SshResult<String> {
         let bytes = self.get_public_key_hash(hash_type)?;
         let hexa = unsafe { sys::ssh_get_hexa(bytes.as_ptr(), bytes.len()) };
@@ -638,6 +821,7 @@ impl SshKey {
     }
 }
 
+/// Allows configuring the underlying `libssh` debug logging level
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogLevel {
     NoLogging,
@@ -647,6 +831,8 @@ pub enum LogLevel {
     Functions,
 }
 
+/// Allows configuring different aspects of a `Session`.
+/// You always need to set at least `SshOption::Hostname`.
 #[derive(Debug)]
 pub enum SshOption {
     /// The hostname or ip address to connect to
@@ -657,8 +843,10 @@ pub enum SshOption {
 
     LogLevel(LogLevel),
 
-    /// The pre-opened socket
-    /// Don't forget to set the hostname as the hostname is used as a key in the known_host mechanism.
+    /// The pre-opened socket.
+    /// You don't typically need to provide this.
+    /// Don't forget to set the hostname as the hostname is used as a
+    /// key in the known_host mechanism.
     Socket(RawSocket),
 
     /// The address to bind the client to
@@ -687,6 +875,8 @@ pub enum SshOption {
     Timeout(Duration),
 }
 
+/// Indicates the state of known-host matching, an important set
+/// to detect and avoid MITM attacks.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KnownHosts {
     /// The known host file does not exist. The host is thus unknown. File will be created if host key is accepted.
@@ -701,6 +891,7 @@ pub enum KnownHosts {
     Other,
 }
 
+/// The type of hash to use when inspecting a public key fingerprint
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PublicKeyHashType {
     Sha1,
@@ -708,19 +899,44 @@ pub enum PublicKeyHashType {
     Sha256,
 }
 
+/// Represents a question prompt in keyboard-interactive auth
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractiveAuthPrompt {
+    /// The prompt to show to the user
     pub prompt: String,
+    /// If `true`, echo the user's answer to the screen.
+    /// If `false`, conceal it, as it is secret/sensitive.
     pub echo: bool,
 }
+
+/// Represents the overall set of instructions in keyboard-interactive auth
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InteractiveAuthInfo {
+    /// An overall set of instructions.
+    /// May be empty.
     pub instruction: String,
+    /// The session name.
+    /// May be empty.
     pub name: String,
+    /// The set of prompts for information that need answers before
+    /// authentication can succeed.
     pub prompts: Vec<InteractiveAuthPrompt>,
 }
 
-pub fn get_password(
+/// A utility function that will prompt the user for input
+/// via the console/tty.
+///
+/// `prompt` is the text to show to the user.
+/// `default_value` can be used to pre-set the answer, allowing the
+/// user to simply press enter.
+///
+/// `echo`, if `true`, means to show the user's answer on the screen
+/// as they type it.  If `false`, means to conceal it.
+///
+/// `verify`, if `true`, will ask the user for their input twice in
+/// order to confirm that they provided the same text both times.
+/// This is useful when creating a password and `echo == false`.
+pub fn get_input(
     prompt: &str,
     default_value: Option<&str>,
     echo: bool,
@@ -780,6 +996,7 @@ mod test {
     #[test]
     fn init() {
         let sess = Session::new();
+        assert!(!sess.is_connected());
         assert!(sess.last_error().is_none());
         assert_eq!(sess.connect(), Err(Error::fatal("Hostname required")));
     }

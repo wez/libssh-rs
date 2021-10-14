@@ -1,5 +1,6 @@
 use thiserror::Error;
 
+/// Represents an error condition
 #[derive(Error, Debug, PartialEq, Eq)]
 pub enum Error {
     /// The last request was denied but situation is recoverable
@@ -13,6 +14,7 @@ pub enum Error {
     TryAgain,
 }
 
+/// Represents the result of a fallible operation
 pub type SshResult<T> = Result<T, Error>;
 
 impl Error {

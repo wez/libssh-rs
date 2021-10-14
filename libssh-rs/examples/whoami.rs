@@ -35,8 +35,7 @@ fn verify_known_hosts(sess: &Session) -> SshResult<()> {
 }
 
 fn prompt(prompt: &str, echo: bool) -> SshResult<String> {
-    get_password(prompt, None, echo, false)
-        .ok_or_else(|| Error::Fatal("reading password".to_string()))
+    get_input(prompt, None, echo, false).ok_or_else(|| Error::Fatal("reading password".to_string()))
 }
 
 fn prompt_stdin(prompt: &str) -> SshResult<String> {

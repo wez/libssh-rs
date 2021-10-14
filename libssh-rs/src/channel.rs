@@ -6,10 +6,20 @@ use std::os::raw::c_int;
 use std::sync::Arc;
 use std::time::Duration;
 
-/// Represents a channel in a Session.
-/// A Session can have multiple channels; there is typically one
+/// Represents a channel in a `Session`.
+///
+/// A `Session` can have multiple channels; there is typically one
 /// for the shell/program being run, but additional channels can
 /// be opened to forward TCP or other connections.
+///
+/// [open_session](#method.open_session) is often the first
+/// thing you will call on the `Channel` after creating it; this establishes
+/// the channel for executing commands.
+///
+/// Then you will typically use either [request_exec](#method.request_exec)
+/// to run a non-interactive command, or [request_pty](#method.request_pty)
+/// followed [request_shell](#method.request_shell) to set up an interactive
+/// remote shell.
 pub struct Channel {
     pub(crate) sess: Arc<SessionHolder>,
     pub(crate) chan: sys::ssh_channel,
@@ -27,7 +37,7 @@ impl Drop for Channel {
 
 impl Channel {
     /// Accept an X11 forwarding channel.
-    /// A newly created channel, or None if no X11 request from the server.
+    /// Returns a newly created `Channel`, or `None` if no X11 request from the server.
     pub fn accept_x11(&self, timeout: std::time::Duration) -> Option<Self> {
         let timeout = timeout.as_millis();
         let chan = unsafe { sys::ssh_channel_accept_x11(self.chan, timeout.try_into().unwrap()) };
@@ -82,6 +92,10 @@ impl Channel {
     }
 
     /// Send an end of file on the channel.
+    ///
+    /// You should call this when you have no additional data to send
+    /// to the channel to signal that information to the remote host.
+    ///
     /// This doesn't close the channel.
     /// You may still read from it but not write.
     pub fn send_eof(&self) -> SshResult<()> {
@@ -95,7 +109,7 @@ impl Channel {
     }
 
     /// Open an agent authentication forwarding channel.
-    /// This type of channel can be opened by a server towards a
+    /// This type of channel can be opened by a *server* towards a
     /// client in order to provide SSH-Agent services to the server-side
     /// process. This channel can only be opened if the client claimed
     /// support by sending a channel request beforehand.
@@ -104,9 +118,10 @@ impl Channel {
         self.basic_status(res, "ssh_channel_open_auth_agent failed")
     }
 
-    /// Send an "auth-agent-req" channel request over an existing session channel.
+    /// Send an `"auth-agent-req"` channel request over an existing session channel.
+    ///
     /// This client-side request will enable forwarding the agent
-    /// over an secure tunnel. When the server is ready to open one
+    /// over a secure tunnel. When the server is ready to open one
     /// authentication agent channel, an
     /// ssh_channel_open_request_auth_agent_callback event will be generated.
     pub fn request_auth_agent(&self) -> SshResult<()> {
@@ -125,6 +140,9 @@ impl Channel {
 
     /// Requests a shell; asks the server to spawn the user's shell,
     /// rather than directly executing a command specified by the client.
+    ///
+    /// The channel must be a session channel; you need to have called
+    /// [open_session](#method.open_session) before this will succeed.
     pub fn request_shell(&self) -> SshResult<()> {
         let res = unsafe { sys::ssh_channel_request_shell(self.chan) };
         self.basic_status(res, "ssh_channel_request_shell failed")
@@ -132,25 +150,33 @@ impl Channel {
 
     /// Run a shell command without an interactive shell.
     /// This is similar to 'sh -c command'.
+    ///
+    /// The channel must be a session channel; you need to have called
+    /// [open_session](#method.open_session) before this will succeed.
     pub fn request_exec(&self, command: &str) -> SshResult<()> {
         let command = CString::new(command)?;
         let res = unsafe { sys::ssh_channel_request_exec(self.chan, command.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_exec failed")
     }
 
-    /// Request a subsystem
+    /// Request a subsystem.
+    ///
+    /// You probably don't need this unless you know what you are doing!
     pub fn request_subsystem(&self, subsys: &str) -> SshResult<()> {
         let subsys = CString::new(subsys)?;
         let res = unsafe { sys::ssh_channel_request_subsystem(self.chan, subsys.as_ptr()) };
         self.basic_status(res, "ssh_channel_request_subsystem failed")
     }
 
-    /// Request a pty with a specific type and size.
+    /// Request a PTY with a specific type and size.
+    /// A PTY is useful when you want to run an interactive program on
+    /// the remote host.
+    ///
     /// `term` is the initial value for the `TERM` environment variable.
     /// If you're not sure what to fill for the values,
     /// `term = "xterm"`, `columns = 80` and `rows = 24` are reasonable
     /// defaults.
-    pub fn request_pty_size(&self, term: &str, columns: u32, rows: u32) -> SshResult<()> {
+    pub fn request_pty(&self, term: &str, columns: u32, rows: u32) -> SshResult<()> {
         let term = CString::new(term)?;
         let res = unsafe {
             sys::ssh_channel_request_pty_size(
@@ -160,7 +186,7 @@ impl Channel {
                 rows.try_into().unwrap(),
             )
         };
-        self.basic_status(res, "ssh_channel_request_exec failed")
+        self.basic_status(res, "ssh_channel_request_pty_size failed")
     }
 
     /// Informs the server that the local size of the PTY has changed
@@ -194,7 +220,7 @@ impl Channel {
     /// For example, `"ABRT"`, `"INT"`, `"KILL"` and so on.
     ///
     /// The OpenSSH server has only supported signals since OpenSSH version 8.1,
-    /// release in 2019.
+    /// released in 2019.
     /// <https://bugzilla.mindrot.org/show_bug.cgi?id=1424>
     pub fn request_send_signal(&self, signal: &str) -> SshResult<()> {
         let signal = CString::new(signal)?;
@@ -260,7 +286,7 @@ impl Channel {
         self.basic_status(res, "ssh_channel_open_forward_unix failed")
     }
 
-    /// Sends the "x11-req" channel request over an existing session channel.
+    /// Sends the `"x11-req"` channel request over an existing session channel.
     /// This will enable redirecting the display of the remote X11 applications
     /// to local X server over an secure tunnel.
     pub fn request_x11(
@@ -391,21 +417,21 @@ impl Channel {
         }
     }
 
-    /// Returns an struct that implements std::io::Read
+    /// Returns a struct that implements `std::io::Read`
     /// and that will read data from the stdout channel.
-    pub fn stdout(&self) -> ChannelStdout {
+    pub fn stdout(&self) -> impl std::io::Read + '_ {
         ChannelStdout { chan: self }
     }
 
-    /// Returns an struct that implements std::io::Read
+    /// Returns a struct that implements `std::io::Read`
     /// and that will read data from the stderr channel.
-    pub fn stderr(&self) -> ChannelStderr {
+    pub fn stderr(&self) -> impl std::io::Read + '_ {
         ChannelStderr { chan: self }
     }
 
-    /// Returns a struct that implements std::io::Write
+    /// Returns a struct that implements `std::io::Write`
     /// and that will write data to the stdin channel
-    pub fn stdin(&self) -> ChannelStdin {
+    pub fn stdin(&self) -> impl std::io::Write + '_ {
         ChannelStdin { chan: self }
     }
 }
@@ -413,7 +439,7 @@ impl Channel {
 /// Represents the stdin stream for the channel.
 /// Implements std::io::Write; writing to this struct
 /// will write to the stdin of the channel.
-pub struct ChannelStdin<'a> {
+struct ChannelStdin<'a> {
     chan: &'a Channel,
 }
 
@@ -430,7 +456,7 @@ impl<'a> std::io::Write for ChannelStdin<'a> {
 /// Represents the stdout stream for the channel.
 /// Implements std::io::Read; reading from this struct
 /// will read from the stdout of the channel.
-pub struct ChannelStdout<'a> {
+struct ChannelStdout<'a> {
     chan: &'a Channel,
 }
 
@@ -443,7 +469,7 @@ impl<'a> std::io::Read for ChannelStdout<'a> {
 /// Represents the stderr stream for the channel.
 /// Implements std::io::Read; reading from this struct
 /// will read from the stderr of the channel.
-pub struct ChannelStderr<'a> {
+struct ChannelStderr<'a> {
     chan: &'a Channel,
 }
 
@@ -453,6 +479,7 @@ impl<'a> std::io::Read for ChannelStderr<'a> {
     }
 }
 
+/// Indicates available data for the stdout or stderr on a `Channel`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PollStatus {
     /// The available bytes to read; may be 0
