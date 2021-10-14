@@ -169,7 +169,8 @@ impl Session {
         self.sess.blocking_flush(timeout)
     }
 
-    /// Disconnect from a session (client or server). The session can then be reused to open a new session.
+    /// Disconnect from a session (client or server).
+    /// The session can then be reused to open a new session.
     pub fn disconnect(&self) {
         unsafe { sys::ssh_disconnect(**self.sess) };
     }
