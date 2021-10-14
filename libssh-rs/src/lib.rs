@@ -14,14 +14,29 @@ mod channel;
 
 pub use crate::channel::*;
 
-static INIT: Once = Once::new();
-
-fn initialize() {
-    INIT.call_once(|| unsafe {
-        let res = sys::ssh_init();
+struct LibraryState {}
+impl LibraryState {
+    pub fn new() -> Self {
+        let res = unsafe { sys::ssh_init() };
         if res != sys::SSH_OK as i32 {
             panic!("ssh_init failed");
         }
+        Self {}
+    }
+}
+impl Drop for LibraryState {
+    fn drop(&mut self) {
+        unsafe { sys::ssh_finalize() };
+    }
+}
+
+static INIT: Once = Once::new();
+static mut LIB: Option<LibraryState> = None;
+
+fn initialize() {
+    INIT.call_once(|| unsafe {
+        let lib = LibraryState::new();
+        LIB.replace(lib);
     });
 }
 
