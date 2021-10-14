@@ -146,17 +146,9 @@ impl Session {
     /// It requires that the `SshOption::Hostname` is already set.
     /// if `file_name` is None the default `~/.ssh/config` will be used.
     pub fn options_parse_config(&self, file_name: Option<&str>) -> SshResult<()> {
-        let res = unsafe {
-            sys::ssh_options_parse_config(
-                self.sess,
-                match file_name {
-                    None => std::ptr::null(),
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                },
-            )
-        };
+        let file_name = opt_str_to_cstring(file_name);
+        let res =
+            unsafe { sys::ssh_options_parse_config(self.sess, opt_cstring_to_cstr(&file_name)) };
         if res == 0 {
             Ok(())
         } else if let Some(err) = self.last_error() {
@@ -166,6 +158,26 @@ impl Session {
                 "error parsing config file: {:?}",
                 file_name
             )))
+        }
+    }
+
+    pub fn get_user_name(&self) -> SshResult<String> {
+        let mut name = std::ptr::null_mut();
+        let res = unsafe {
+            sys::ssh_options_get(self.sess, sys::ssh_options_e::SSH_OPTIONS_USER, &mut name)
+        };
+        if res != sys::SSH_OK as i32 || name.is_null() {
+            if let Some(err) = self.last_error() {
+                Err(err)
+            } else {
+                Err(Error::Fatal("error getting user name".to_string()))
+            }
+        } else {
+            let user_name = unsafe { CStr::from_ptr(name) }
+                .to_string_lossy()
+                .to_string();
+            unsafe { sys::ssh_string_free_char(name) };
+            Ok(user_name)
         }
     }
 
@@ -186,66 +198,51 @@ impl Session {
                 )
             },
             SshOption::Hostname(name) => unsafe {
+                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_HOST,
-                    CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
+                    name.as_ptr() as _,
                 )
             },
             SshOption::BindAddress(name) => unsafe {
+                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_BINDADDR,
-                    CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
+                    name.as_ptr() as _,
                 )
             },
             SshOption::AddIdentity(name) => unsafe {
+                let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_ADD_IDENTITY,
-                    CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
+                    name.as_ptr() as _,
                 )
             },
             SshOption::User(name) => unsafe {
+                let name = opt_string_to_cstring(name);
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_USER,
-                    match name {
-                        None => std::ptr::null(),
-                        Some(name) => CString::new(name)
-                            .map_err(|e| Error::Fatal(e.to_string()))?
-                            .as_ptr() as _,
-                    },
+                    opt_cstring_to_cstr(&name) as _,
                 )
             },
             SshOption::SshDir(name) => unsafe {
+                let name = opt_string_to_cstring(name);
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_SSH_DIR,
-                    match name {
-                        None => std::ptr::null(),
-                        Some(name) => CString::new(name)
-                            .map_err(|e| Error::Fatal(e.to_string()))?
-                            .as_ptr() as _,
-                    },
+                    opt_cstring_to_cstr(&name) as _,
                 )
             },
             SshOption::KnownHosts(known_hosts) => unsafe {
+                let known_hosts = opt_string_to_cstring(known_hosts);
                 sys::ssh_options_set(
                     self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_KNOWNHOSTS,
-                    match known_hosts {
-                        None => std::ptr::null(),
-                        Some(kh) => CString::new(kh)
-                            .map_err(|e| Error::Fatal(e.to_string()))?
-                            .as_ptr() as _,
-                    },
+                    opt_cstring_to_cstr(&known_hosts) as _,
                 )
             },
             SshOption::Port(port) => {
@@ -303,21 +300,14 @@ impl Session {
         username: Option<&str>,
         password: Option<&str>,
     ) -> SshResult<AuthStatus> {
+        let username = opt_str_to_cstring(username);
+        let password = opt_str_to_cstring(password);
+
         let res = unsafe {
             sys::ssh_userauth_publickey_auto(
                 self.sess,
-                match username {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
-                match password {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
+                opt_cstring_to_cstr(&username),
+                opt_cstring_to_cstr(&password),
             )
         };
 
@@ -338,17 +328,8 @@ impl Session {
     }
 
     pub fn userauth_none(&self, username: Option<&str>) -> SshResult<AuthStatus> {
-        let res = unsafe {
-            sys::ssh_userauth_none(
-                self.sess,
-                match username {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
-            )
-        };
+        let username = opt_str_to_cstring(username);
+        let res = unsafe { sys::ssh_userauth_none(self.sess, opt_cstring_to_cstr(&username)) };
 
         match res {
             sys::ssh_auth_e_SSH_AUTH_SUCCESS => Ok(AuthStatus::Success),
@@ -367,15 +348,11 @@ impl Session {
     }
 
     pub fn userauth_list(&self, username: Option<&str>) -> SshResult<AuthMethods> {
+        let username = opt_str_to_cstring(username);
         Ok(unsafe {
             AuthMethods::from_bits_unchecked(sys::ssh_userauth_list(
                 self.sess,
-                match username {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
+                opt_cstring_to_cstr(&username),
             ) as u32)
         })
     }
@@ -416,11 +393,12 @@ impl Session {
 
     pub fn userauth_keyboard_interactive_set_answers(&self, answers: &[String]) -> SshResult<()> {
         for (idx, answer) in answers.iter().enumerate() {
-            let answer = CString::new(answer.as_bytes())
-                .map_err(|e| Error::Fatal(e.to_string()))?
-                .as_ptr() as _;
+            let answer =
+                CString::new(answer.as_bytes()).map_err(|e| Error::Fatal(e.to_string()))?;
 
-            let res = unsafe { sys::ssh_userauth_kbdint_setanswer(self.sess, idx as u32, answer) };
+            let res = unsafe {
+                sys::ssh_userauth_kbdint_setanswer(self.sess, idx as u32, answer.as_ptr())
+            };
 
             if res != 0 {
                 if let Some(err) = self.last_error() {
@@ -437,21 +415,14 @@ impl Session {
         username: Option<&str>,
         sub_methods: Option<&str>,
     ) -> SshResult<AuthStatus> {
+        let username = opt_str_to_cstring(username);
+        let sub_methods = opt_str_to_cstring(sub_methods);
+
         let res = unsafe {
             sys::ssh_userauth_kbdint(
                 self.sess,
-                match username {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
-                match sub_methods {
-                    Some(sm) => CString::new(sm)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
+                opt_cstring_to_cstr(&username),
+                opt_cstring_to_cstr(&sub_methods),
             )
         };
         match res {
@@ -475,21 +446,13 @@ impl Session {
         username: Option<&str>,
         password: Option<&str>,
     ) -> SshResult<AuthStatus> {
+        let username = opt_str_to_cstring(username);
+        let password = opt_str_to_cstring(password);
         let res = unsafe {
             sys::ssh_userauth_password(
                 self.sess,
-                match username {
-                    Some(name) => CString::new(name)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
-                match password {
-                    Some(pw) => CString::new(pw)
-                        .map_err(|e| Error::Fatal(e.to_string()))?
-                        .as_ptr() as _,
-                    None => std::ptr::null(),
-                },
+                opt_cstring_to_cstr(&username),
+                opt_cstring_to_cstr(&password),
             )
         };
         match res {
@@ -713,6 +676,21 @@ pub fn get_password(
         )
     } else {
         None
+    }
+}
+
+fn opt_str_to_cstring(s: Option<&str>) -> Option<CString> {
+    s.and_then(|s| CString::new(s).ok())
+}
+
+fn opt_string_to_cstring(s: Option<String>) -> Option<CString> {
+    s.and_then(|s| CString::new(s).ok())
+}
+
+fn opt_cstring_to_cstr(s: &Option<CString>) -> *const i8 {
+    match s {
+        Some(s) => s.as_ptr(),
+        None => std::ptr::null(),
     }
 }
 

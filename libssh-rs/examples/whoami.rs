@@ -111,9 +111,13 @@ fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
 fn main() -> SshResult<()> {
     let sess = Session::new();
     sess.set_option(SshOption::Hostname("localhost".to_string()))?;
-    sess.set_option(SshOption::LogLevel(LogLevel::Packet))?;
+    // sess.set_option(SshOption::LogLevel(LogLevel::Packet))?;
     sess.options_parse_config(None)?;
     sess.connect()?;
+    eprintln!(
+        "using {} as user name for authentication",
+        sess.get_user_name()?
+    );
     verify_known_hosts(&sess)?;
 
     authenticate(&sess, None)?;
