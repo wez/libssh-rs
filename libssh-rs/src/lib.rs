@@ -5,8 +5,13 @@ use std::os::raw::{c_int, c_uint, c_ulong};
 use std::os::unix::io::RawFd as RawSocket;
 #[cfg(windows)]
 use std::os::windows::io::RawSocket;
+use std::sync::Arc;
 use std::sync::Once;
 use thiserror::Error;
+
+mod channel;
+
+pub use crate::channel::*;
 
 static INIT: Once = Once::new();
 
@@ -40,11 +45,53 @@ impl Error {
     }
 }
 
-pub struct Session {
+pub(crate) struct SessionHolder {
     sess: sys::ssh_session,
 }
+unsafe impl Send for SessionHolder {}
 
-unsafe impl Send for Session {}
+impl std::ops::Deref for SessionHolder {
+    type Target = sys::ssh_session;
+    fn deref(&self) -> &sys::ssh_session {
+        &self.sess
+    }
+}
+
+impl Drop for SessionHolder {
+    fn drop(&mut self) {
+        unsafe {
+            sys::ssh_free(self.sess);
+        }
+    }
+}
+
+impl SessionHolder {
+    fn last_error(&self) -> Option<Error> {
+        let code = unsafe { sys::ssh_get_error_code(self.sess as _) } as sys::ssh_error_types_e;
+        if code == sys::ssh_error_types_e_SSH_NO_ERROR {
+            return None;
+        }
+
+        let reason = unsafe { sys::ssh_get_error(self.sess as _) };
+        let reason = if reason.is_null() {
+            String::new()
+        } else {
+            unsafe { CStr::from_ptr(reason) }
+                .to_string_lossy()
+                .to_string()
+        };
+
+        if code == sys::ssh_error_types_e_SSH_REQUEST_DENIED {
+            Some(Error::RequestDenied(reason))
+        } else {
+            Some(Error::Fatal(reason))
+        }
+    }
+}
+
+pub struct Session {
+    sess: Arc<SessionHolder>,
+}
 
 impl Session {
     pub fn new() -> Self {
@@ -53,16 +100,34 @@ impl Session {
         if sess.is_null() {
             panic!("Out of memory when calling ssh_new");
         }
-        Self { sess }
+        Self {
+            sess: Arc::new(SessionHolder { sess }),
+        }
+    }
+
+    pub fn new_channel(&self) -> SshResult<Channel> {
+        let chan = unsafe { sys::ssh_channel_new(**self.sess) };
+        if chan.is_null() {
+            if let Some(err) = self.last_error() {
+                Err(err)
+            } else {
+                Err(Error::Fatal("ssh_channel_new failed".to_string()))
+            }
+        } else {
+            Ok(Channel {
+                sess: Arc::clone(&self.sess),
+                chan,
+            })
+        }
     }
 
     /// Disconnect from a session (client or server). The session can then be reused to open a new session.
     pub fn disconnect(&self) {
-        unsafe { sys::ssh_disconnect(self.sess) };
+        unsafe { sys::ssh_disconnect(**self.sess) };
     }
 
     pub fn connect(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_connect(self.sess) };
+        let res = unsafe { sys::ssh_connect(**self.sess) };
         if res == sys::SSH_OK as i32 {
             Ok(())
         } else if res == sys::SSH_AGAIN {
@@ -84,7 +149,7 @@ impl Session {
     /// to connect to. This allows to detect if there is a MITM attack going
     /// on of if there have been changes on the server we don't know about.
     pub fn is_known_server(&self) -> SshResult<KnownHosts> {
-        match unsafe { sys::ssh_session_is_known_server(self.sess) } {
+        match unsafe { sys::ssh_session_is_known_server(**self.sess) } {
             sys::ssh_known_hosts_e_SSH_KNOWN_HOSTS_NOT_FOUND => Ok(KnownHosts::NotFound),
             sys::ssh_known_hosts_e_SSH_KNOWN_HOSTS_UNKNOWN => Ok(KnownHosts::Unknown),
             sys::ssh_known_hosts_e_SSH_KNOWN_HOSTS_OK => Ok(KnownHosts::Ok),
@@ -107,7 +172,7 @@ impl Session {
     /// by appending a new line at the end. The global known_hosts file
     /// is considered read-only so it is not touched by this function.
     pub fn update_known_hosts_file(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_session_update_known_hosts(self.sess) };
+        let res = unsafe { sys::ssh_session_update_known_hosts(**self.sess) };
 
         if res == sys::SSH_OK as i32 {
             Ok(())
@@ -118,26 +183,8 @@ impl Session {
         }
     }
 
-    pub fn last_error(&self) -> Option<Error> {
-        let code = unsafe { sys::ssh_get_error_code(self.sess as _) } as sys::ssh_error_types_e;
-        if code == sys::ssh_error_types_e_SSH_NO_ERROR {
-            return None;
-        }
-
-        let reason = unsafe { sys::ssh_get_error(self.sess as _) };
-        let reason = if reason.is_null() {
-            String::new()
-        } else {
-            unsafe { CStr::from_ptr(reason) }
-                .to_string_lossy()
-                .to_string()
-        };
-
-        if code == sys::ssh_error_types_e_SSH_REQUEST_DENIED {
-            Some(Error::RequestDenied(reason))
-        } else {
-            Some(Error::Fatal(reason))
-        }
+    fn last_error(&self) -> Option<Error> {
+        self.sess.last_error()
     }
 
     /// Parse the ssh config file.
@@ -148,7 +195,7 @@ impl Session {
     pub fn options_parse_config(&self, file_name: Option<&str>) -> SshResult<()> {
         let file_name = opt_str_to_cstring(file_name);
         let res =
-            unsafe { sys::ssh_options_parse_config(self.sess, opt_cstring_to_cstr(&file_name)) };
+            unsafe { sys::ssh_options_parse_config(**self.sess, opt_cstring_to_cstr(&file_name)) };
         if res == 0 {
             Ok(())
         } else if let Some(err) = self.last_error() {
@@ -164,7 +211,7 @@ impl Session {
     pub fn get_user_name(&self) -> SshResult<String> {
         let mut name = std::ptr::null_mut();
         let res = unsafe {
-            sys::ssh_options_get(self.sess, sys::ssh_options_e::SSH_OPTIONS_USER, &mut name)
+            sys::ssh_options_get(**self.sess, sys::ssh_options_e::SSH_OPTIONS_USER, &mut name)
         };
         if res != sys::SSH_OK as i32 || name.is_null() {
             if let Some(err) = self.last_error() {
@@ -192,7 +239,7 @@ impl Session {
                     LogLevel::Functions => sys::SSH_LOG_FUNCTIONS,
                 } as u32 as c_int;
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_LOG_VERBOSITY,
                     &level as *const _ as _,
                 )
@@ -200,7 +247,7 @@ impl Session {
             SshOption::Hostname(name) => unsafe {
                 let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_HOST,
                     name.as_ptr() as _,
                 )
@@ -208,7 +255,7 @@ impl Session {
             SshOption::BindAddress(name) => unsafe {
                 let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_BINDADDR,
                     name.as_ptr() as _,
                 )
@@ -216,7 +263,7 @@ impl Session {
             SshOption::AddIdentity(name) => unsafe {
                 let name = CString::new(name).map_err(|e| Error::Fatal(e.to_string()))?;
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_ADD_IDENTITY,
                     name.as_ptr() as _,
                 )
@@ -224,7 +271,7 @@ impl Session {
             SshOption::User(name) => unsafe {
                 let name = opt_string_to_cstring(name);
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_USER,
                     opt_cstring_to_cstr(&name) as _,
                 )
@@ -232,7 +279,7 @@ impl Session {
             SshOption::SshDir(name) => unsafe {
                 let name = opt_string_to_cstring(name);
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_SSH_DIR,
                     opt_cstring_to_cstr(&name) as _,
                 )
@@ -240,7 +287,7 @@ impl Session {
             SshOption::KnownHosts(known_hosts) => unsafe {
                 let known_hosts = opt_string_to_cstring(known_hosts);
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_KNOWNHOSTS,
                     opt_cstring_to_cstr(&known_hosts) as _,
                 )
@@ -249,7 +296,7 @@ impl Session {
                 let port: c_uint = port.into();
                 unsafe {
                     sys::ssh_options_set(
-                        self.sess,
+                        **self.sess,
                         sys::ssh_options_e::SSH_OPTIONS_PORT,
                         &port as *const _ as _,
                     )
@@ -257,7 +304,7 @@ impl Session {
             }
             SshOption::Socket(socket) => unsafe {
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_FD,
                     &socket as *const _ as _,
                 )
@@ -265,7 +312,7 @@ impl Session {
             SshOption::Timeout(duration) => unsafe {
                 let micros: c_ulong = duration.as_micros() as c_ulong;
                 sys::ssh_options_set(
-                    self.sess,
+                    **self.sess,
                     sys::ssh_options_e::SSH_OPTIONS_TIMEOUT_USEC,
                     &micros as *const _ as _,
                 )
@@ -285,7 +332,7 @@ impl Session {
     /// It is very important that you verify at some moment that the hash matches a known server. If you don't do it, cryptography wont help you at making things secure. OpenSSH uses SHA1 to print public key digests.
     pub fn get_server_public_key(&self) -> SshResult<SshKey> {
         let mut key = std::ptr::null_mut();
-        let res = unsafe { sys::ssh_get_server_publickey(self.sess, &mut key) };
+        let res = unsafe { sys::ssh_get_server_publickey(**self.sess, &mut key) };
         if res == sys::SSH_OK as i32 && !key.is_null() {
             Ok(SshKey { key })
         } else if let Some(err) = self.last_error() {
@@ -322,7 +369,7 @@ impl Session {
 
         let res = unsafe {
             sys::ssh_userauth_publickey_auto(
-                self.sess,
+                **self.sess,
                 opt_cstring_to_cstr(&username),
                 opt_cstring_to_cstr(&password),
             )
@@ -333,7 +380,7 @@ impl Session {
 
     pub fn userauth_none(&self, username: Option<&str>) -> SshResult<AuthStatus> {
         let username = opt_str_to_cstring(username);
-        let res = unsafe { sys::ssh_userauth_none(self.sess, opt_cstring_to_cstr(&username)) };
+        let res = unsafe { sys::ssh_userauth_none(**self.sess, opt_cstring_to_cstr(&username)) };
 
         self.auth_result(res, "authentication error")
     }
@@ -342,30 +389,30 @@ impl Session {
         let username = opt_str_to_cstring(username);
         Ok(unsafe {
             AuthMethods::from_bits_unchecked(sys::ssh_userauth_list(
-                self.sess,
+                **self.sess,
                 opt_cstring_to_cstr(&username),
             ) as u32)
         })
     }
 
     pub fn userauth_keyboard_interactive_info(&self) -> SshResult<InteractiveAuthInfo> {
-        let name = unsafe { sys::ssh_userauth_kbdint_getname(self.sess) };
+        let name = unsafe { sys::ssh_userauth_kbdint_getname(**self.sess) };
         let name = unsafe { CStr::from_ptr(name) }
             .to_string_lossy()
             .to_string();
 
-        let instruction = unsafe { sys::ssh_userauth_kbdint_getinstruction(self.sess) };
+        let instruction = unsafe { sys::ssh_userauth_kbdint_getinstruction(**self.sess) };
         let instruction = unsafe { CStr::from_ptr(instruction) }
             .to_string_lossy()
             .to_string();
 
-        let n_prompts = unsafe { sys::ssh_userauth_kbdint_getnprompts(self.sess) };
+        let n_prompts = unsafe { sys::ssh_userauth_kbdint_getnprompts(**self.sess) };
         assert!(n_prompts >= 0);
         let n_prompts = n_prompts as u32;
         let mut prompts = vec![];
         for i in 0..n_prompts {
             let mut echo = 0;
-            let prompt = unsafe { sys::ssh_userauth_kbdint_getprompt(self.sess, i, &mut echo) };
+            let prompt = unsafe { sys::ssh_userauth_kbdint_getprompt(**self.sess, i, &mut echo) };
 
             prompts.push(InteractiveAuthPrompt {
                 prompt: unsafe { CStr::from_ptr(prompt) }
@@ -388,7 +435,7 @@ impl Session {
                 CString::new(answer.as_bytes()).map_err(|e| Error::Fatal(e.to_string()))?;
 
             let res = unsafe {
-                sys::ssh_userauth_kbdint_setanswer(self.sess, idx as u32, answer.as_ptr())
+                sys::ssh_userauth_kbdint_setanswer(**self.sess, idx as u32, answer.as_ptr())
             };
 
             if res != 0 {
@@ -411,7 +458,7 @@ impl Session {
 
         let res = unsafe {
             sys::ssh_userauth_kbdint(
-                self.sess,
+                **self.sess,
                 opt_cstring_to_cstr(&username),
                 opt_cstring_to_cstr(&sub_methods),
             )
@@ -428,19 +475,40 @@ impl Session {
         let password = opt_str_to_cstring(password);
         let res = unsafe {
             sys::ssh_userauth_password(
-                self.sess,
+                **self.sess,
                 opt_cstring_to_cstr(&username),
                 opt_cstring_to_cstr(&password),
             )
         };
         self.auth_result(res, "authentication error")
     }
-}
 
-impl Drop for Session {
-    fn drop(&mut self) {
-        unsafe {
-            sys::ssh_free(self.sess);
+    /// Sends the "tcpip-forward" global request to ask the server
+    /// to begin listening for inbound connections.
+    /// If `bind_address` is None then bind to all interfaces on
+    /// the server side.  Otherwise, bind only to the specified address.
+    /// If `port` is `0` then the server will pick a port to bind to,
+    /// otherwise, will attempt to use the requested port.
+    /// Returns the bound port number.
+    pub fn listen_forward(&self, bind_address: Option<&str>, port: u16) -> SshResult<u16> {
+        let bind_address = opt_str_to_cstring(bind_address);
+        let mut bound_port = 0;
+        let res = unsafe {
+            sys::ssh_channel_listen_forward(
+                **self.sess,
+                opt_cstring_to_cstr(&bind_address),
+                port as i32,
+                &mut bound_port,
+            )
+        };
+        if res == sys::SSH_OK as i32 {
+            Ok(bound_port as u16)
+        } else if let Some(err) = self.last_error() {
+            Err(err)
+        } else {
+            Err(Error::Fatal(
+                "error in ssh_channel_listen_forward".to_string(),
+            ))
         }
     }
 }

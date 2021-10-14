@@ -1,4 +1,5 @@
 use libssh_rs::*;
+use std::io::Read;
 
 fn verify_known_hosts(sess: &Session) -> SshResult<()> {
     let key = sess
@@ -48,17 +49,16 @@ fn prompt_stdin(prompt: &str) -> SshResult<String> {
 }
 
 fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
-    match dbg!(sess.userauth_none(user_name)?) {
+    match sess.userauth_none(user_name)? {
         AuthStatus::Success => return Ok(()),
         _ => {}
     }
 
     loop {
         let auth_methods = sess.userauth_list(user_name)?;
-        eprintln!("{:?}", auth_methods);
 
         if auth_methods.contains(AuthMethods::PUBLIC_KEY) {
-            match dbg!(sess.userauth_public_key_auto(None, None)?) {
+            match sess.userauth_public_key_auto(None, None)? {
                 AuthStatus::Success => return Ok(()),
                 _ => {}
             }
@@ -66,11 +66,10 @@ fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
 
         if auth_methods.contains(AuthMethods::INTERACTIVE) {
             loop {
-                match dbg!(sess.userauth_keyboard_interactive(None, None)?) {
+                match sess.userauth_keyboard_interactive(None, None)? {
                     AuthStatus::Success => return Ok(()),
                     AuthStatus::Info => {
                         let info = sess.userauth_keyboard_interactive_info()?;
-                        eprintln!("{:?}", info);
                         if !info.instruction.is_empty() {
                             eprintln!("{}", info.instruction);
                         }
@@ -122,7 +121,21 @@ fn main() -> SshResult<()> {
 
     authenticate(&sess, None)?;
 
-    eprintln!("OK!");
+    let channel = sess.new_channel()?;
+    channel.open_session()?;
+    channel.request_exec("whoami")?;
+    channel.send_eof()?;
+
+    let mut stdout = String::new();
+    channel
+        .stdout()
+        .read_to_string(&mut stdout)
+        .map_err(|e| Error::Fatal(e.to_string()))?;
+
+    eprintln!("whoami -> {}", stdout);
+
+    let res = channel.get_exit_status();
+    eprintln!("exit status: {:?}", res);
 
     Ok(())
 }
