@@ -1,17 +1,14 @@
 use std::path::PathBuf;
 
 fn main() {
-    if std::env::var_os("CARGO_FEATURE_VENDORED").is_none() {
-        if pkg_config::Config::new()
+    if std::env::var_os("CARGO_FEATURE_VENDORED").is_none() &&
+        pkg_config::Config::new()
             .atleast_version("0.8.1")
             .probe("libssh")
             .is_ok()
         {
             return;
         }
-
-        // Fall back to the vendored library
-    }
 
     let mut cfg = cc::Build::new();
     cfg.define("LIBSSH_STATIC", None);
@@ -122,7 +119,7 @@ fn main() {
     if let Some(path) = std::env::var_os("DEP_OPENSSL_INCLUDE") {
         if let Some(path) = std::env::split_paths(&path).next() {
             if let Some(path) = path.to_str() {
-                if path.len() > 0 {
+                if !path.is_empty() {
                     cfg.include(path);
                 }
             }
@@ -228,10 +225,9 @@ fn main() {
         println!("cargo:rustc-link-lib=user32");
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=ntdll");
-        println!("cargo:rustc-link-lib=z");
     } else {
         println!("cargo:rustc-link-lib=ssl");
         println!("cargo:rustc-link-lib=crypto");
-        println!("cargo:rustc-link-lib=z");
     }
+        println!("cargo:rustc-link-lib=z");
 }

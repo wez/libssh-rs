@@ -4,6 +4,9 @@
 //! `ssh2` rust crate which uses [libssh2](https://www.libssh2.org),
 //! which is an unrelated project that implements similar functionality!
 
+// This is a bad lint
+#![allow(clippy::wildcard_in_or_patterns)]
+
 /// Re-exporting the underlying unsafe API, should you need it
 pub use libssh_rs_sys as sys;
 
