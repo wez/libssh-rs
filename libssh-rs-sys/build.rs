@@ -225,10 +225,10 @@ fn main() {
         }
     } else {
         pkg_config::Config::new()
-            .atleast_version("0.8")
+            .atleast_version("0.8.1")
             .probe("libssh")
             .expect(
-                "dynamically linked libssh >= 0.8 is required. \
+                "dynamically linked libssh >= 0.8.1 is required. \
                     Alternatively enabled the 'vendored' to build the vendored library sources.",
             );
     }
