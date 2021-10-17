@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 fn main() {
-    if std::env::var_os("CARGO_FEATURE_VENDORED").is_none() &&
-        pkg_config::Config::new()
+    if std::env::var_os("CARGO_FEATURE_VENDORED").is_none()
+        && pkg_config::Config::new()
             .atleast_version("0.8.1")
             .probe("libssh")
             .is_ok()
-        {
-            return;
-        }
+    {
+        return;
+    }
 
     let mut cfg = cc::Build::new();
     cfg.define("LIBSSH_STATIC", None);
@@ -229,5 +229,5 @@ fn main() {
         println!("cargo:rustc-link-lib=ssl");
         println!("cargo:rustc-link-lib=crypto");
     }
-        println!("cargo:rustc-link-lib=z");
+    println!("cargo:rustc-link-lib=z");
 }
