@@ -3,7 +3,7 @@ use libssh_rs_sys as sys;
 use std::convert::TryInto;
 use std::ffi::CString;
 use std::os::raw::c_int;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 /// Represents a channel in a `Session`.
@@ -20,17 +20,29 @@ use std::time::Duration;
 /// to run a non-interactive command, or [request_pty](#method.request_pty)
 /// followed [request_shell](#method.request_shell) to set up an interactive
 /// remote shell.
+///
+/// # Thread Safety
+///
+/// `Channel` is strongly associated with the `Session` to which it belongs.
+/// libssh doesn't allow using anything associated with a given `Session`
+/// from multiple threads concurrently.  These Rust bindings encapsulate
+/// the underlying `Session` in an internal mutex, which allows you to
+/// safely operate on the various elements of the session and even move
+/// them to other threads, but you need to be aware that calling methods
+/// on any of those structs will attempt to lock the underlying session,
+/// and this can lead to blocking in surprising situations.
 pub struct Channel {
-    pub(crate) sess: Arc<SessionHolder>,
-    pub(crate) chan: sys::ssh_channel,
+    pub(crate) sess: Arc<Mutex<SessionHolder>>,
+    pub(crate) chan_inner: sys::ssh_channel,
 }
 
 unsafe impl Send for Channel {}
 
 impl Drop for Channel {
     fn drop(&mut self) {
+        let (_sess, chan) = self.lock_session();
         unsafe {
-            sys::ssh_channel_free(self.chan);
+            sys::ssh_channel_free(chan);
         }
     }
 }
@@ -39,24 +51,21 @@ impl Channel {
     /// Accept an X11 forwarding channel.
     /// Returns a newly created `Channel`, or `None` if no X11 request from the server.
     pub fn accept_x11(&self, timeout: std::time::Duration) -> Option<Self> {
+        let (_sess, chan) = self.lock_session();
         let timeout = timeout.as_millis();
-        let chan = unsafe { sys::ssh_channel_accept_x11(self.chan, timeout.try_into().unwrap()) };
+        let chan = unsafe { sys::ssh_channel_accept_x11(chan, timeout.try_into().unwrap()) };
         if chan.is_null() {
             None
         } else {
             Some(Self {
                 sess: Arc::clone(&self.sess),
-                chan,
+                chan_inner: chan,
             })
         }
     }
 
-    fn last_error(&self) -> Option<Error> {
-        self.sess.last_error()
-    }
-
-    fn basic_status(&self, res: i32, what: &str) -> SshResult<()> {
-        self.sess.basic_status(res, what)
+    fn lock_session(&self) -> (MutexGuard<SessionHolder>, sys::ssh_channel) {
+        (self.sess.lock().unwrap(), self.chan_inner)
     }
 
     /// Close a channel.
@@ -64,8 +73,9 @@ impl Channel {
     /// You won't be able to recover any data the server was going
     /// to send or was in buffers.
     pub fn close(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_close(self.chan) };
-        self.basic_status(res, "error closing channel")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_close(chan) };
+        sess.basic_status(res, "error closing channel")
     }
 
     /// Get the exit status of the channel
@@ -73,7 +83,8 @@ impl Channel {
     /// This function may block until a timeout (or never) if the other
     /// side is not willing to close the channel.
     pub fn get_exit_status(&self) -> Option<c_int> {
-        let res = unsafe { sys::ssh_channel_get_exit_status(self.chan) };
+        let (_sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_get_exit_status(chan) };
         if res == -1 {
             None
         } else {
@@ -83,12 +94,14 @@ impl Channel {
 
     /// Check if the channel is closed or not.
     pub fn is_closed(&self) -> bool {
-        unsafe { sys::ssh_channel_is_closed(self.chan) != 0 }
+        let (_sess, chan) = self.lock_session();
+        unsafe { sys::ssh_channel_is_closed(chan) != 0 }
     }
 
     /// Check if remote has sent an EOF.
     pub fn is_eof(&self) -> bool {
-        unsafe { sys::ssh_channel_is_eof(self.chan) != 0 }
+        let (_sess, chan) = self.lock_session();
+        unsafe { sys::ssh_channel_is_eof(chan) != 0 }
     }
 
     /// Send an end of file on the channel.
@@ -99,13 +112,15 @@ impl Channel {
     /// This doesn't close the channel.
     /// You may still read from it but not write.
     pub fn send_eof(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_send_eof(self.chan) };
-        self.basic_status(res, "ssh_channel_send_eof failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_send_eof(chan) };
+        sess.basic_status(res, "ssh_channel_send_eof failed")
     }
 
     /// Check if the channel is open or not.
     pub fn is_open(&self) -> bool {
-        unsafe { sys::ssh_channel_is_open(self.chan) != 0 }
+        let (_sess, chan) = self.lock_session();
+        unsafe { sys::ssh_channel_is_open(chan) != 0 }
     }
 
     /// Open an agent authentication forwarding channel.
@@ -114,8 +129,9 @@ impl Channel {
     /// process. This channel can only be opened if the client claimed
     /// support by sending a channel request beforehand.
     pub fn open_auth_agent(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_open_auth_agent(self.chan) };
-        self.basic_status(res, "ssh_channel_open_auth_agent failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_open_auth_agent(chan) };
+        sess.basic_status(res, "ssh_channel_open_auth_agent failed")
     }
 
     /// Send an `"auth-agent-req"` channel request over an existing session channel.
@@ -125,17 +141,19 @@ impl Channel {
     /// authentication agent channel, an
     /// ssh_channel_open_request_auth_agent_callback event will be generated.
     pub fn request_auth_agent(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_request_auth_agent(self.chan) };
-        self.basic_status(res, "ssh_channel_request_auth_agent failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_request_auth_agent(chan) };
+        sess.basic_status(res, "ssh_channel_request_auth_agent failed")
     }
 
     /// Set environment variable.
     /// Some environment variables may be refused by security reasons.
     pub fn request_env(&self, name: &str, value: &str) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let name = CString::new(name)?;
         let value = CString::new(value)?;
-        let res = unsafe { sys::ssh_channel_request_env(self.chan, name.as_ptr(), value.as_ptr()) };
-        self.basic_status(res, "ssh_channel_request_env failed")
+        let res = unsafe { sys::ssh_channel_request_env(chan, name.as_ptr(), value.as_ptr()) };
+        sess.basic_status(res, "ssh_channel_request_env failed")
     }
 
     /// Requests a shell; asks the server to spawn the user's shell,
@@ -144,8 +162,9 @@ impl Channel {
     /// The channel must be a session channel; you need to have called
     /// [open_session](#method.open_session) before this will succeed.
     pub fn request_shell(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_request_shell(self.chan) };
-        self.basic_status(res, "ssh_channel_request_shell failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_request_shell(chan) };
+        sess.basic_status(res, "ssh_channel_request_shell failed")
     }
 
     /// Run a shell command without an interactive shell.
@@ -154,18 +173,20 @@ impl Channel {
     /// The channel must be a session channel; you need to have called
     /// [open_session](#method.open_session) before this will succeed.
     pub fn request_exec(&self, command: &str) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let command = CString::new(command)?;
-        let res = unsafe { sys::ssh_channel_request_exec(self.chan, command.as_ptr()) };
-        self.basic_status(res, "ssh_channel_request_exec failed")
+        let res = unsafe { sys::ssh_channel_request_exec(chan, command.as_ptr()) };
+        sess.basic_status(res, "ssh_channel_request_exec failed")
     }
 
     /// Request a subsystem.
     ///
     /// You probably don't need this unless you know what you are doing!
     pub fn request_subsystem(&self, subsys: &str) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let subsys = CString::new(subsys)?;
-        let res = unsafe { sys::ssh_channel_request_subsystem(self.chan, subsys.as_ptr()) };
-        self.basic_status(res, "ssh_channel_request_subsystem failed")
+        let res = unsafe { sys::ssh_channel_request_subsystem(chan, subsys.as_ptr()) };
+        sess.basic_status(res, "ssh_channel_request_subsystem failed")
     }
 
     /// Request a PTY with a specific type and size.
@@ -177,28 +198,30 @@ impl Channel {
     /// `term = "xterm"`, `columns = 80` and `rows = 24` are reasonable
     /// defaults.
     pub fn request_pty(&self, term: &str, columns: u32, rows: u32) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let term = CString::new(term)?;
         let res = unsafe {
             sys::ssh_channel_request_pty_size(
-                self.chan,
+                chan,
                 term.as_ptr(),
                 columns.try_into().unwrap(),
                 rows.try_into().unwrap(),
             )
         };
-        self.basic_status(res, "ssh_channel_request_pty_size failed")
+        sess.basic_status(res, "ssh_channel_request_pty_size failed")
     }
 
     /// Informs the server that the local size of the PTY has changed
     pub fn change_pty_size(&self, columns: u32, rows: u32) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let res = unsafe {
             sys::ssh_channel_change_pty_size(
-                self.chan,
+                chan,
                 columns.try_into().unwrap(),
                 rows.try_into().unwrap(),
             )
         };
-        self.basic_status(res, "ssh_channel_change_pty_size failed")
+        sess.basic_status(res, "ssh_channel_change_pty_size failed")
     }
 
     /// Send a break signal to the server (as described in RFC 4335).
@@ -206,9 +229,9 @@ impl Channel {
     /// system may not support breaks. In such a case this request will
     /// be silently ignored.
     pub fn request_send_break(&self, length: Duration) -> SshResult<()> {
-        let res =
-            unsafe { sys::ssh_channel_request_send_break(self.chan, length.as_millis() as _) };
-        self.basic_status(res, "ssh_channel_request_send_break failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_request_send_break(chan, length.as_millis() as _) };
+        sess.basic_status(res, "ssh_channel_request_send_break failed")
     }
 
     /// Send a signal to remote process (as described in RFC 4254, section 6.9).
@@ -223,9 +246,10 @@ impl Channel {
     /// released in 2019.
     /// <https://bugzilla.mindrot.org/show_bug.cgi?id=1424>
     pub fn request_send_signal(&self, signal: &str) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let signal = CString::new(signal)?;
-        let res = unsafe { sys::ssh_channel_request_send_signal(self.chan, signal.as_ptr()) };
-        self.basic_status(res, "ssh_channel_request_send_signal failed")
+        let res = unsafe { sys::ssh_channel_request_send_signal(chan, signal.as_ptr()) };
+        sess.basic_status(res, "ssh_channel_request_send_signal failed")
     }
 
     /// Open a TCP/IP forwarding channel.
@@ -244,18 +268,19 @@ impl Channel {
         source_host: &str,
         source_port: u16,
     ) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let remote_host = CString::new(remote_host)?;
         let source_host = CString::new(source_host)?;
         let res = unsafe {
             sys::ssh_channel_open_forward(
-                self.chan,
+                chan,
                 remote_host.as_ptr(),
                 remote_port as i32,
                 source_host.as_ptr(),
                 source_port as i32,
             )
         };
-        self.basic_status(res, "ssh_channel_open_forward failed")
+        sess.basic_status(res, "ssh_channel_open_forward failed")
     }
 
     /// Open a UNIX domain socket forwarding channel.
@@ -273,17 +298,18 @@ impl Channel {
         source_host: &str,
         source_port: u16,
     ) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let remote_path = CString::new(remote_path)?;
         let source_host = CString::new(source_host)?;
         let res = unsafe {
             sys::ssh_channel_open_forward_unix(
-                self.chan,
+                chan,
                 remote_path.as_ptr(),
                 source_host.as_ptr(),
                 source_port as i32,
             )
         };
-        self.basic_status(res, "ssh_channel_open_forward_unix failed")
+        sess.basic_status(res, "ssh_channel_open_forward_unix failed")
     }
 
     /// Sends the `"x11-req"` channel request over an existing session channel.
@@ -296,11 +322,12 @@ impl Channel {
         cookie: Option<&str>,
         screen_number: c_int,
     ) -> SshResult<()> {
+        let (sess, chan) = self.lock_session();
         let protocol = opt_str_to_cstring(protocol);
         let cookie = opt_str_to_cstring(cookie);
         let res = unsafe {
             sys::ssh_channel_request_x11(
-                self.chan,
+                chan,
                 if single_connection { 1 } else { 0 },
                 opt_cstring_to_cstr(&protocol),
                 opt_cstring_to_cstr(&cookie),
@@ -308,13 +335,14 @@ impl Channel {
             )
         };
 
-        self.basic_status(res, "ssh_channel_open_forward failed")
+        sess.basic_status(res, "ssh_channel_open_forward failed")
     }
 
     /// Open a session channel (suited for a shell, not TCP forwarding).
     pub fn open_session(&self) -> SshResult<()> {
-        let res = unsafe { sys::ssh_channel_open_session(self.chan) };
-        self.basic_status(res, "ssh_channel_open_session failed")
+        let (sess, chan) = self.lock_session();
+        let res = unsafe { sys::ssh_channel_open_session(chan) };
+        sess.basic_status(res, "ssh_channel_open_session failed")
     }
 
     /// Polls a channel for data to read.
@@ -325,16 +353,16 @@ impl Channel {
         is_stderr: bool,
         timeout: Option<Duration>,
     ) -> SshResult<PollStatus> {
+        let (sess, chan) = self.lock_session();
         let timeout = match timeout {
             Some(t) => t.as_millis() as c_int,
             None => -1,
         };
-        let res = unsafe {
-            sys::ssh_channel_poll_timeout(self.chan, if is_stderr { 1 } else { 0 }, timeout)
-        };
+        let res =
+            unsafe { sys::ssh_channel_poll_timeout(chan, if is_stderr { 1 } else { 0 }, timeout) };
         match res {
             sys::SSH_ERROR => {
-                if let Some(err) = self.last_error() {
+                if let Some(err) = sess.last_error() {
                     Err(err)
                 } else {
                     Err(Error::fatal("ssh_channel_poll failed"))
@@ -357,13 +385,15 @@ impl Channel {
         is_stderr: bool,
         timeout: Option<Duration>,
     ) -> SshResult<usize> {
+        let (sess, chan) = self.lock_session();
+
         let timeout = match timeout {
             Some(t) => t.as_millis() as c_int,
             None => -1,
         };
         let res = unsafe {
             sys::ssh_channel_read_timeout(
-                self.chan,
+                chan,
                 buf.as_mut_ptr() as _,
                 buf.len() as u32,
                 if is_stderr { 1 } else { 0 },
@@ -372,7 +402,7 @@ impl Channel {
         };
         match res {
             sys::SSH_ERROR => {
-                if let Some(err) = self.last_error() {
+                if let Some(err) = sess.last_error() {
                     Err(err)
                 } else {
                     Err(Error::fatal("ssh_channel_read_timeout failed"))
@@ -387,22 +417,36 @@ impl Channel {
         }
     }
 
+    /// Get the remote window size.
+    /// This is the maximum amounts of bytes the remote side expects us to send
+    /// before growing the window again.
+    /// A nonzero return value does not guarantee the socket is ready to send that much data.
+    /// Buffering may happen in the local SSH packet buffer, so beware of really big window sizes.
+    /// A zero return value means that a write will block (if the session is in blocking mode)
+    /// until the window grows back.
+    pub fn window_size(&self) -> usize {
+        let (_sess, chan) = self.lock_session();
+        unsafe { sys::ssh_channel_window_size(chan).try_into().unwrap() }
+    }
+
     fn read_impl(&self, buf: &mut [u8], is_stderr: bool) -> std::io::Result<usize> {
         Ok(self.read_timeout(buf, is_stderr, None)?)
     }
 
     fn write_impl(&self, buf: &[u8], is_stderr: bool) -> SshResult<usize> {
+        let (sess, chan) = self.lock_session();
+
         let res = unsafe {
             (if is_stderr {
                 sys::ssh_channel_write_stderr
             } else {
                 sys::ssh_channel_write
-            })(self.chan, buf.as_ptr() as _, buf.len() as _)
+            })(chan, buf.as_ptr() as _, buf.len() as _)
         };
 
         match res {
             sys::SSH_ERROR => {
-                if let Some(err) = self.last_error() {
+                if let Some(err) = sess.last_error() {
                     Err(err)
                 } else {
                     Err(Error::fatal("ssh_channel_read_timeout failed"))
@@ -445,7 +489,7 @@ struct ChannelStdin<'a> {
 
 impl<'a> std::io::Write for ChannelStdin<'a> {
     fn flush(&mut self) -> std::io::Result<()> {
-        Ok(self.chan.sess.blocking_flush(None)?)
+        Ok(self.chan.sess.lock().unwrap().blocking_flush(None)?)
     }
 
     fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
