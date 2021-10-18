@@ -22,9 +22,11 @@ use std::time::Duration;
 
 mod channel;
 mod error;
+mod sftp;
 
 pub use crate::channel::*;
 pub use crate::error::*;
+pub use crate::sftp::*;
 
 struct LibraryState {}
 impl LibraryState {
@@ -933,6 +935,28 @@ impl Session {
     /// otherwise.
     pub fn is_connected(&self) -> bool {
         unsafe { sys::ssh_is_connected(**self.lock_session()) != 0 }
+    }
+
+    pub fn sftp(&self) -> SshResult<Sftp> {
+        let sftp = {
+            let sess = self.lock_session();
+            let sftp = unsafe { sys::sftp_new(**sess) };
+            if sftp.is_null() {
+                return if let Some(err) = sess.last_error() {
+                    Err(err)
+                } else {
+                    Err(Error::fatal("failed to allocate sftp session"))
+                };
+            }
+
+            Sftp {
+                sess: Arc::clone(&self.sess),
+                sftp_inner: sftp,
+            }
+        };
+
+        sftp.init()?;
+        Ok(sftp)
     }
 }
 

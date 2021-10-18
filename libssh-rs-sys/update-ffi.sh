@@ -24,8 +24,8 @@ bindgen \
   --constified-enum ssh_known_hosts_e \
   --constified-enum ssh_auth_e \
   --constified-enum ssh_keytypes_e \
-  --whitelist-type 'ssh.*' \
-  --whitelist-function 'ssh.*' \
+  --whitelist-type '(sftp|ssh).*' \
+  --whitelist-function '(sftp|ssh).*' \
   --whitelist-var 'SSH.*' \
   --size_t-is-usize \
   -- \

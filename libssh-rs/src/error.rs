@@ -12,6 +12,9 @@ pub enum Error {
     /// The session is in non-blocking mode and the call must be tried again
     #[error("TryAgain")]
     TryAgain,
+
+    #[error("SftpError: {}", .0)]
+    Sftp(crate::sftp::SftpError),
 }
 
 /// Represents the result of a fallible operation
@@ -40,6 +43,7 @@ impl From<Error> for std::io::Error {
             Error::RequestDenied(msg) | Error::Fatal(msg) => {
                 std::io::Error::new(std::io::ErrorKind::Other, msg)
             }
+            Error::Sftp(err) => std::io::Error::new(std::io::ErrorKind::Other, err.to_string()),
         }
     }
 }

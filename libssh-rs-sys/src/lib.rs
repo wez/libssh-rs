@@ -191,9 +191,14 @@ pub type __uint8_t = ::std::os::raw::c_uchar;
 pub type __uint16_t = ::std::os::raw::c_ushort;
 pub type __uint32_t = ::std::os::raw::c_uint;
 pub type __uint64_t = ::std::os::raw::c_ulong;
+pub type __uid_t = ::std::os::raw::c_uint;
+pub type __gid_t = ::std::os::raw::c_uint;
 pub type __mode_t = ::std::os::raw::c_uint;
 pub type __time_t = ::std::os::raw::c_long;
 pub type __suseconds_t = ::std::os::raw::c_long;
+pub type __ssize_t = ::std::os::raw::c_long;
+pub type gid_t = __gid_t;
+pub type uid_t = __uid_t;
 pub type mode_t = __mode_t;
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
@@ -2365,6 +2370,439 @@ extern "C" {
 }
 extern "C" {
     pub fn ssh_accept(session: ssh_session) -> ::std::os::raw::c_int;
+}
+pub type sftp_attributes = *mut sftp_attributes_struct;
+pub type sftp_client_message = *mut sftp_client_message_struct;
+pub type sftp_dir = *mut sftp_dir_struct;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_ext_struct {
+    _unused: [u8; 0],
+}
+pub type sftp_ext = *mut sftp_ext_struct;
+pub type sftp_file = *mut sftp_file_struct;
+pub type sftp_message = *mut sftp_message_struct;
+pub type sftp_packet = *mut sftp_packet_struct;
+pub type sftp_request_queue = *mut sftp_request_queue_struct;
+pub type sftp_session = *mut sftp_session_struct;
+pub type sftp_status_message = *mut sftp_status_message_struct;
+pub type sftp_statvfs_t = *mut sftp_statvfs_struct;
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_session_struct {
+    pub session: ssh_session,
+    pub channel: ssh_channel,
+    pub server_version: ::std::os::raw::c_int,
+    pub client_version: ::std::os::raw::c_int,
+    pub version: ::std::os::raw::c_int,
+    pub queue: sftp_request_queue,
+    pub id_counter: u32,
+    pub errnum: ::std::os::raw::c_int,
+    pub handles: *mut *mut ::std::os::raw::c_void,
+    pub ext: sftp_ext,
+    pub read_packet: sftp_packet,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_packet_struct {
+    pub sftp: sftp_session,
+    pub type_: u8,
+    pub payload: ssh_buffer,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_file_struct {
+    pub sftp: sftp_session,
+    pub name: *mut ::std::os::raw::c_char,
+    pub offset: u64,
+    pub handle: ssh_string,
+    pub eof: ::std::os::raw::c_int,
+    pub nonblocking: ::std::os::raw::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_dir_struct {
+    pub sftp: sftp_session,
+    pub name: *mut ::std::os::raw::c_char,
+    pub handle: ssh_string,
+    pub buffer: ssh_buffer,
+    pub count: u32,
+    pub eof: ::std::os::raw::c_int,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_message_struct {
+    pub sftp: sftp_session,
+    pub packet_type: u8,
+    pub payload: ssh_buffer,
+    pub id: u32,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_client_message_struct {
+    pub sftp: sftp_session,
+    pub type_: u8,
+    pub id: u32,
+    pub filename: *mut ::std::os::raw::c_char,
+    pub flags: u32,
+    pub attr: sftp_attributes,
+    pub handle: ssh_string,
+    pub offset: u64,
+    pub len: u32,
+    pub attr_num: ::std::os::raw::c_int,
+    pub attrbuf: ssh_buffer,
+    pub data: ssh_string,
+    pub complete_message: ssh_buffer,
+    pub str_data: *mut ::std::os::raw::c_char,
+    pub submessage: *mut ::std::os::raw::c_char,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_request_queue_struct {
+    pub next: sftp_request_queue,
+    pub message: sftp_message,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_status_message_struct {
+    pub id: u32,
+    pub status: u32,
+    pub error_unused: ssh_string,
+    pub lang_unused: ssh_string,
+    pub errormsg: *mut ::std::os::raw::c_char,
+    pub langmsg: *mut ::std::os::raw::c_char,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_attributes_struct {
+    pub name: *mut ::std::os::raw::c_char,
+    pub longname: *mut ::std::os::raw::c_char,
+    pub flags: u32,
+    pub type_: u8,
+    pub size: u64,
+    pub uid: u32,
+    pub gid: u32,
+    pub owner: *mut ::std::os::raw::c_char,
+    pub group: *mut ::std::os::raw::c_char,
+    pub permissions: u32,
+    pub atime64: u64,
+    pub atime: u32,
+    pub atime_nseconds: u32,
+    pub createtime: u64,
+    pub createtime_nseconds: u32,
+    pub mtime64: u64,
+    pub mtime: u32,
+    pub mtime_nseconds: u32,
+    pub acl: ssh_string,
+    pub extended_count: u32,
+    pub extended_type: ssh_string,
+    pub extended_data: ssh_string,
+}
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct sftp_statvfs_struct {
+    pub f_bsize: u64,
+    pub f_frsize: u64,
+    pub f_blocks: u64,
+    pub f_bfree: u64,
+    pub f_bavail: u64,
+    pub f_files: u64,
+    pub f_ffree: u64,
+    pub f_favail: u64,
+    pub f_fsid: u64,
+    pub f_flag: u64,
+    pub f_namemax: u64,
+}
+extern "C" {
+    pub fn sftp_new(session: ssh_session) -> sftp_session;
+}
+extern "C" {
+    pub fn sftp_new_channel(session: ssh_session, channel: ssh_channel) -> sftp_session;
+}
+extern "C" {
+    pub fn sftp_free(sftp: sftp_session);
+}
+extern "C" {
+    pub fn sftp_init(sftp: sftp_session) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_get_error(sftp: sftp_session) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_extensions_get_count(sftp: sftp_session) -> ::std::os::raw::c_uint;
+}
+extern "C" {
+    pub fn sftp_extensions_get_name(
+        sftp: sftp_session,
+        indexn: ::std::os::raw::c_uint,
+    ) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_extensions_get_data(
+        sftp: sftp_session,
+        indexn: ::std::os::raw::c_uint,
+    ) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_extension_supported(
+        sftp: sftp_session,
+        name: *const ::std::os::raw::c_char,
+        data: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_opendir(session: sftp_session, path: *const ::std::os::raw::c_char) -> sftp_dir;
+}
+extern "C" {
+    pub fn sftp_readdir(session: sftp_session, dir: sftp_dir) -> sftp_attributes;
+}
+extern "C" {
+    pub fn sftp_dir_eof(dir: sftp_dir) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_stat(session: sftp_session, path: *const ::std::os::raw::c_char)
+        -> sftp_attributes;
+}
+extern "C" {
+    pub fn sftp_lstat(
+        session: sftp_session,
+        path: *const ::std::os::raw::c_char,
+    ) -> sftp_attributes;
+}
+extern "C" {
+    pub fn sftp_fstat(file: sftp_file) -> sftp_attributes;
+}
+extern "C" {
+    pub fn sftp_attributes_free(file: sftp_attributes);
+}
+extern "C" {
+    pub fn sftp_closedir(dir: sftp_dir) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_close(file: sftp_file) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_open(
+        session: sftp_session,
+        file: *const ::std::os::raw::c_char,
+        accesstype: ::std::os::raw::c_int,
+        mode: mode_t,
+    ) -> sftp_file;
+}
+extern "C" {
+    pub fn sftp_file_set_nonblocking(handle: sftp_file);
+}
+extern "C" {
+    pub fn sftp_file_set_blocking(handle: sftp_file);
+}
+extern "C" {
+    pub fn sftp_read(file: sftp_file, buf: *mut ::std::os::raw::c_void, count: usize) -> isize;
+}
+extern "C" {
+    pub fn sftp_async_read_begin(file: sftp_file, len: u32) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_async_read(
+        file: sftp_file,
+        data: *mut ::std::os::raw::c_void,
+        len: u32,
+        id: u32,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_write(file: sftp_file, buf: *const ::std::os::raw::c_void, count: usize) -> isize;
+}
+extern "C" {
+    pub fn sftp_seek(file: sftp_file, new_offset: u32) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_seek64(file: sftp_file, new_offset: u64) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_tell(file: sftp_file) -> ::std::os::raw::c_ulong;
+}
+extern "C" {
+    pub fn sftp_tell64(file: sftp_file) -> u64;
+}
+extern "C" {
+    pub fn sftp_rewind(file: sftp_file);
+}
+extern "C" {
+    pub fn sftp_unlink(
+        sftp: sftp_session,
+        file: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_rmdir(
+        sftp: sftp_session,
+        directory: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_mkdir(
+        sftp: sftp_session,
+        directory: *const ::std::os::raw::c_char,
+        mode: mode_t,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_rename(
+        sftp: sftp_session,
+        original: *const ::std::os::raw::c_char,
+        newname: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_setstat(
+        sftp: sftp_session,
+        file: *const ::std::os::raw::c_char,
+        attr: sftp_attributes,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_chown(
+        sftp: sftp_session,
+        file: *const ::std::os::raw::c_char,
+        owner: uid_t,
+        group: gid_t,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_chmod(
+        sftp: sftp_session,
+        file: *const ::std::os::raw::c_char,
+        mode: mode_t,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_utimes(
+        sftp: sftp_session,
+        file: *const ::std::os::raw::c_char,
+        times: *const timeval,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_symlink(
+        sftp: sftp_session,
+        target: *const ::std::os::raw::c_char,
+        dest: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_readlink(
+        sftp: sftp_session,
+        path: *const ::std::os::raw::c_char,
+    ) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_statvfs(sftp: sftp_session, path: *const ::std::os::raw::c_char) -> sftp_statvfs_t;
+}
+extern "C" {
+    pub fn sftp_fstatvfs(file: sftp_file) -> sftp_statvfs_t;
+}
+extern "C" {
+    pub fn sftp_statvfs_free(statvfs_o: sftp_statvfs_t);
+}
+extern "C" {
+    pub fn sftp_fsync(file: sftp_file) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_canonicalize_path(
+        sftp: sftp_session,
+        path: *const ::std::os::raw::c_char,
+    ) -> *mut ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_server_version(sftp: sftp_session) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_get_client_message(sftp: sftp_session) -> sftp_client_message;
+}
+extern "C" {
+    pub fn sftp_client_message_free(msg: sftp_client_message);
+}
+extern "C" {
+    pub fn sftp_client_message_get_type(msg: sftp_client_message) -> u8;
+}
+extern "C" {
+    pub fn sftp_client_message_get_filename(
+        msg: sftp_client_message,
+    ) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_client_message_set_filename(
+        msg: sftp_client_message,
+        newname: *const ::std::os::raw::c_char,
+    );
+}
+extern "C" {
+    pub fn sftp_client_message_get_data(msg: sftp_client_message) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_client_message_get_flags(msg: sftp_client_message) -> u32;
+}
+extern "C" {
+    pub fn sftp_client_message_get_submessage(
+        msg: sftp_client_message,
+    ) -> *const ::std::os::raw::c_char;
+}
+extern "C" {
+    pub fn sftp_send_client_message(
+        sftp: sftp_session,
+        msg: sftp_client_message,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_reply_name(
+        msg: sftp_client_message,
+        name: *const ::std::os::raw::c_char,
+        attr: sftp_attributes,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_reply_handle(msg: sftp_client_message, handle: ssh_string)
+        -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_handle_alloc(sftp: sftp_session, info: *mut ::std::os::raw::c_void) -> ssh_string;
+}
+extern "C" {
+    pub fn sftp_reply_attr(
+        msg: sftp_client_message,
+        attr: sftp_attributes,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_handle(sftp: sftp_session, handle: ssh_string) -> *mut ::std::os::raw::c_void;
+}
+extern "C" {
+    pub fn sftp_reply_status(
+        msg: sftp_client_message,
+        status: u32,
+        message: *const ::std::os::raw::c_char,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_reply_names_add(
+        msg: sftp_client_message,
+        file: *const ::std::os::raw::c_char,
+        longname: *const ::std::os::raw::c_char,
+        attr: sftp_attributes,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_reply_names(msg: sftp_client_message) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_reply_data(
+        msg: sftp_client_message,
+        data: *const ::std::os::raw::c_void,
+        len: ::std::os::raw::c_int,
+    ) -> ::std::os::raw::c_int;
+}
+extern "C" {
+    pub fn sftp_handle_remove(sftp: sftp_session, handle: *mut ::std::os::raw::c_void);
 }
 pub type __builtin_va_list = [__va_list_tag; 1usize];
 #[repr(C)]
