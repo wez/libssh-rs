@@ -59,6 +59,8 @@ fn initialize() -> SshResult<()> {
 
 pub(crate) struct SessionHolder {
     sess: sys::ssh_session,
+    callbacks: sys::ssh_callbacks_struct,
+    auth_callback: Option<Box<dyn FnMut(&str, bool, bool, Option<String>) -> SshResult<String>>>,
 }
 unsafe impl Send for SessionHolder {}
 
@@ -167,10 +169,143 @@ impl Session {
         if sess.is_null() {
             Err(Error::fatal("ssh_new failed"))
         } else {
-            Ok(Self {
-                sess: Arc::new(Mutex::new(SessionHolder { sess })),
-            })
+            let callbacks = sys::ssh_callbacks_struct {
+                size: std::mem::size_of::<sys::ssh_callbacks_struct>(),
+                userdata: std::ptr::null_mut(),
+                auth_function: None,
+                log_function: None,
+                connect_status_function: None,
+                global_request_function: None,
+                channel_open_request_x11_function: None,
+                channel_open_request_auth_agent_function: None,
+            };
+            let sess = Arc::new(Mutex::new(SessionHolder {
+                sess,
+                callbacks,
+                auth_callback: None,
+            }));
+
+            {
+                let mut sess = sess.lock().unwrap();
+                let ptr: *mut SessionHolder = &mut *sess;
+                sess.callbacks.userdata = ptr as _;
+
+                unsafe {
+                    sys::ssh_set_callbacks(**sess, &mut sess.callbacks);
+                }
+            }
+
+            Ok(Self { sess })
         }
+    }
+
+    unsafe extern "C" fn bridge_auth_callback(
+        prompt: *const ::std::os::raw::c_char,
+        buf: *mut ::std::os::raw::c_char,
+        len: usize,
+        echo: ::std::os::raw::c_int,
+        verify: ::std::os::raw::c_int,
+        userdata: *mut ::std::os::raw::c_void,
+    ) -> ::std::os::raw::c_int {
+        let prompt = CStr::from_ptr(prompt).to_string_lossy().to_string();
+        let echo = if echo == 0 { false } else { true };
+        let verify = if verify == 0 { false } else { true };
+
+        let result = std::panic::catch_unwind(|| {
+            let sess: &mut SessionHolder = &mut *(userdata as *mut SessionHolder);
+
+            let identity = {
+                let mut value = std::ptr::null_mut();
+                sys::ssh_userauth_publickey_auto_get_current_identity(**sess, &mut value);
+                if value.is_null() {
+                    None
+                } else {
+                    let s = CStr::from_ptr(value).to_string_lossy().to_string();
+                    sys::ssh_string_free_char(value);
+                    Some(s)
+                }
+            };
+
+            let cb = sess.auth_callback.as_mut().unwrap();
+            let response = (cb)(&prompt, echo, verify, identity)?;
+            if response.len() > len {
+                return Err(Error::Fatal(format!(
+                    "passphrase is larger than buffer allows {} vs available {}",
+                    response.len(),
+                    len
+                )));
+            }
+
+            let len = response.len().min(len);
+            let buf = std::slice::from_raw_parts_mut(buf as *mut u8, len);
+            buf.copy_from_slice(response.as_bytes());
+
+            Ok(())
+        });
+
+        match result {
+            Err(err) => {
+                eprintln!("Error in auth callback: {:?}", err);
+                sys::SSH_ERROR
+            }
+            Ok(Err(err)) => {
+                eprintln!("Error in auth callback: {:#}", err);
+                sys::SSH_ERROR
+            }
+            Ok(Ok(())) => sys::SSH_OK as c_int,
+        }
+    }
+
+    /// Sets a callback that is used by libssh when it needs to prompt
+    /// for the passphrase during public key authentication.
+    /// This is NOT used for password or keyboard interactive authentication.
+    /// The callback has the signature:
+    ///
+    /// ```no_run
+    /// use libssh_rs::SshResult;
+    /// fn callback(prompt: &str, echo: bool, verify: bool,
+    ///             identity: Option<String>) -> SshResult<String> {
+    ///  unimplemented!()
+    /// }
+    /// ```
+    ///
+    /// The `prompt` parameter is the prompt text to show to the user.
+    /// The `identity` parameter, if not None, will hold the identity that
+    /// is currently being tried by the `userauth_public_key_auto` method,
+    /// which is helpful to show to the user so that they can input the
+    /// correct passphrase.
+    ///
+    /// The `echo` parameter, if `true`, means that the input entered by
+    /// the user should be visible on screen. If `false`, it should not be
+    /// shown on screen because it is deemed sensitive in some way.
+    ///
+    /// The `verify` parameter, if `true`, means that the user should be
+    /// prompted twice to make sure they entered the same text both times.
+    ///
+    /// The function should return the user's input as a string, or an
+    /// `Error` indicating what went wrong.
+    ///
+    /// You can use the `get_input` function to satisfy the auth callback:
+    ///
+    /// ```
+    /// use libssh_rs::*;
+    /// let sess = Session::new().unwrap();
+    /// sess.set_auth_callback(|prompt, echo, verify, identity| {
+    ///     let prompt = match identity {
+    ///         Some(ident) => format!("{} ({}): ", prompt, ident),
+    ///         None => prompt.to_string(),
+    ///     };
+    ///     get_input(&prompt, None, echo, verify)
+    ///         .ok_or_else(|| Error::Fatal("reading password".to_string()))
+    /// });
+    /// ```
+    pub fn set_auth_callback<F>(&self, callback: F)
+    where
+        F: FnMut(&str, bool, bool, Option<String>) -> SshResult<String> + 'static,
+    {
+        let mut sess = self.lock_session();
+        sess.auth_callback.replace(Box::new(callback));
+        sess.callbacks.auth_function = Some(Self::bridge_auth_callback);
     }
 
     /// Create a new channel.
@@ -421,6 +556,23 @@ impl Session {
         }
     }
 
+    /// Try to authenticate using an ssh agent.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    pub fn userauth_agent(&self, username: Option<&str>) -> SshResult<AuthStatus> {
+        let sess = self.lock_session();
+
+        let username = opt_str_to_cstring(username);
+
+        let res = unsafe { sys::ssh_userauth_agent(**sess, opt_cstring_to_cstr(&username)) };
+
+        sess.auth_result(res, "authentication error")
+    }
+
     /// Try to automatically authenticate using public key authentication.
     ///
     /// This will attempt to use an ssh agent if available, and will then
@@ -433,8 +585,11 @@ impl Session {
     /// do not allow changing the username during authentication.
     ///
     /// The `password` parameter can be used to pre-fill a password to
-    /// unlock the private key.  Leaving it set to `None` will cause
-    /// libssh to prompt for the passphrase.
+    /// unlock the private key(s).  Leaving it set to `None` will cause
+    /// libssh to prompt for the passphrase if you have previously
+    /// used [set_auth_callback](#method.set_auth_callback)
+    /// to configure a callback.  If you haven't set the callback and
+    /// a key is password protected, this authentication method will fail.
     pub fn userauth_public_key_auto(
         &self,
         username: Option<&str>,

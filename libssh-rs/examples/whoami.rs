@@ -106,6 +106,15 @@ fn authenticate(sess: &Session, user_name: Option<&str>) -> SshResult<()> {
 
 fn main() -> SshResult<()> {
     let sess = Session::new()?;
+    sess.set_auth_callback(|prompt, echo, verify, identity| {
+        let prompt = match identity {
+            Some(ident) => format!("{} ({}): ", prompt, ident),
+            None => prompt.to_string(),
+        };
+        get_input(&prompt, None, echo, verify)
+            .ok_or_else(|| Error::Fatal("reading password".to_string()))
+    });
+
     sess.set_option(SshOption::Hostname("localhost".to_string()))?;
     // sess.set_option(SshOption::LogLevel(LogLevel::Packet))?;
     sess.options_parse_config(None)?;

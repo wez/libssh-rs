@@ -3,7 +3,9 @@ use std::path::PathBuf;
 fn main() {
     if std::env::var_os("CARGO_FEATURE_VENDORED").is_none()
         && pkg_config::Config::new()
-            .atleast_version("0.8.1")
+            // ssh_userauth_publickey_auto_get_current_identity
+            // is not yet in a released version of libssh
+            .atleast_version("0.9.7")
             .probe("libssh")
             .is_ok()
     {
