@@ -413,6 +413,7 @@ impl Channel {
                 "ssh_channel_read_timeout returned unexpected {} value",
                 n
             ))),
+            0 if !sess.is_blocking() => Err(Error::TryAgain),
             n => Ok(n as usize),
         }
     }

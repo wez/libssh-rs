@@ -80,6 +80,10 @@ impl Drop for SessionHolder {
 }
 
 impl SessionHolder {
+    pub fn is_blocking(&self) -> bool {
+        unsafe { sys::ssh_is_blocking(self.sess) != 0 }
+    }
+
     fn last_error(&self) -> Option<Error> {
         let code = unsafe { sys::ssh_get_error_code(self.sess as _) } as sys::ssh_error_types_e;
         if code == sys::ssh_error_types_e_SSH_NO_ERROR {
@@ -874,7 +878,7 @@ impl Session {
 
     /// Returns `true` if the session is in blocking mode, `false` otherwise.
     pub fn is_blocking(&self) -> bool {
-        unsafe { sys::ssh_is_blocking(**self.lock_session()) != 0 }
+        self.lock_session().is_blocking()
     }
 
     /// If `blocking == true` then set the session to block mode, otherwise
