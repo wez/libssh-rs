@@ -415,6 +415,46 @@ impl Session {
         }
     }
 
+    /// Get the issue banner from the server.
+    /// This is the banner showing a disclaimer to users who log in,
+    /// typically their right or the fact that they will be monitored.
+    pub fn get_issue_banner(&self) -> SshResult<String> {
+        let sess = self.lock_session();
+        let banner = unsafe { sys::ssh_get_issue_banner(**sess) };
+        if banner.is_null() {
+            if let Some(err) = sess.last_error() {
+                Err(err)
+            } else {
+                Err(Error::fatal("failed to get issue banner"))
+            }
+        } else {
+            let banner_text = unsafe { CStr::from_ptr(banner) }
+                .to_string_lossy()
+                .to_string();
+            unsafe { sys::ssh_string_free_char(banner) };
+            Ok(banner_text)
+        }
+    }
+
+    /// Gets the server banner.
+    /// This typically holds the server version information
+    pub fn get_server_banner(&self) -> SshResult<String> {
+        let sess = self.lock_session();
+        let banner = unsafe { sys::ssh_get_serverbanner(**sess) };
+        if banner.is_null() {
+            if let Some(err) = sess.last_error() {
+                Err(err)
+            } else {
+                Err(Error::fatal("failed to get server banner"))
+            }
+        } else {
+            let banner_text = unsafe { CStr::from_ptr(banner) }
+                .to_string_lossy()
+                .to_string();
+            Ok(banner_text)
+        }
+    }
+
     /// Returns the user name that will be used to authenticate with the remote host
     pub fn get_user_name(&self) -> SshResult<String> {
         let sess = self.lock_session();
