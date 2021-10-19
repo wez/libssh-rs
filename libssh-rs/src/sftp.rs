@@ -53,6 +53,9 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Create a directory.
+    /// `mode` specifies the permission bits to use on the directory.
+    /// They will be modified by the effective umask on the server.
     pub fn create_dir(&self, filename: &str, mode: sys::mode_t) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -60,6 +63,8 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Canonicalize `filename`, resolving relative directory references
+    /// and symlinks.
     pub fn canonicalize(&self, filename: &str) -> SshResult<String> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -73,6 +78,7 @@ impl Sftp {
         }
     }
 
+    /// Change the permissions of a file
     pub fn chmod(&self, filename: &str, mode: sys::mode_t) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -80,6 +86,7 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Change the ownership of a file.
     pub fn chown(&self, filename: &str, owner: sys::uid_t, group: sys::gid_t) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -87,6 +94,7 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Read the payload of a symlink
     pub fn read_link(&self, filename: &str) -> SshResult<String> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -142,6 +150,7 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Retrieve metadata for a file, traversing symlinks
     pub fn metadata(&self, filename: &str) -> SshResult<Metadata> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -153,6 +162,7 @@ impl Sftp {
         }
     }
 
+    /// Retrieve metadata for a file, without traversing symlinks.
     pub fn symlink_metadata(&self, filename: &str) -> SshResult<Metadata> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -164,6 +174,7 @@ impl Sftp {
         }
     }
 
+    /// Rename a file from `filename` to `new_name`
     pub fn rename(&self, filename: &str, new_name: &str) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let new_name = CString::new(new_name)?;
@@ -172,6 +183,7 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Remove a file or an empty directory
     pub fn remove_file(&self, filename: &str) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -179,6 +191,7 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Remove an empty directory
     pub fn remove_dir(&self, filename: &str) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
@@ -186,6 +199,9 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Create a symlink on the server.
+    /// `target` is the filename of the symlink to be created,
+    /// and `dest` is the payload of the symlink.
     pub fn symlink(&self, target: &str, dest: &str) -> SshResult<()> {
         let target = CString::new(target)?;
         let dest = CString::new(dest)?;
@@ -194,6 +210,11 @@ impl Sftp {
         SftpError::result(sftp, res, ())
     }
 
+    /// Open a file on the server.
+    /// `accesstype` corresponds to the `open(2)` `flags` parameter
+    /// and controls whether the file is opened for read/write and so on.
+    /// `mode` specified the permission bits to use when creating a new file;
+    /// they will be modified by the effective umask on the server side.
     pub fn open(
         &self,
         filename: &str,
@@ -212,6 +233,35 @@ impl Sftp {
                 sftp: sftp,
             })
         }
+    }
+
+    /// Open a directory to obtain directory entries
+    pub fn open_dir(&self, filename: &str) -> SshResult<SftpDir> {
+        let filename = CString::new(filename)?;
+        let (_sess, sftp) = self.lock_session();
+        let res = unsafe { sys::sftp_opendir(sftp, filename.as_ptr()) };
+        if res.is_null() {
+            Err(Error::Sftp(SftpError::from_session(sftp)))
+        } else {
+            Ok(SftpDir {
+                sess: Arc::clone(&self.sess),
+                dir_inner: res,
+                sftp: sftp,
+            })
+        }
+    }
+
+    /// Convenience function that reads all of the directory entries
+    /// into a Vec.  If you need to deal with very large directories,
+    /// you may wish to directly use [open_dir](#method.open_dir)
+    /// and manually iterate the directory contents.
+    pub fn read_dir(&self, filename: &str) -> SshResult<Vec<Metadata>> {
+        let dir = self.open_dir(filename)?;
+        let mut res = vec![];
+        while let Some(item) = dir.read_dir() {
+            res.push(item?);
+        }
+        Ok(res)
     }
 }
 
@@ -246,7 +296,8 @@ impl SftpFile {
         }
     }
 
-    pub fn stat(&self) -> SshResult<Metadata> {
+    /// Retrieve metadata for the file
+    pub fn metadata(&self) -> SshResult<Metadata> {
         let (_sess, file) = self.lock_session();
         let attr = unsafe { sys::sftp_fstat(file) };
         if attr.is_null() {
@@ -341,7 +392,12 @@ impl std::io::Seek for SftpFile {
                 }
             }
             std::io::SeekFrom::End(p) => {
-                let end = self.stat().map_err(|e| e)?.len();
+                let end = self.metadata().map_err(|e| e)?.len().ok_or_else(|| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        "metadata didn't return the length",
+                    )
+                })?;
                 let target = if p < 0 {
                     end.saturating_sub(p.abs() as u64)
                 } else {
@@ -378,15 +434,26 @@ impl std::io::Seek for SftpFile {
     }
 }
 
+/// Change multiple file attributes at once.
+/// If a field is_some, then its value will be applied
+/// to the file on the server side.  If it is_none, then
+/// that particular field will be left unmodified.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SetAttributes {
+    /// Change the file length
     pub size: Option<u64>,
+    /// Change the ownership (chown)
     pub uid_gid: Option<(sys::uid_t, sys::gid_t)>,
+    /// Change the permissions (chmod)
     pub permissions: Option<u32>,
     /// Note that the protocol/libssh implementation has
     /// 1-second granularity for access and mtime
     pub atime_mtime: Option<(SystemTime, SystemTime)>,
 }
 
+/// Represents metadata about a file.
+/// libssh returns this in a couple of contexts, and not all
+/// fields are used in all contexts.
 pub struct Metadata {
     attr: sys::sftp_attributes,
 }
@@ -402,8 +469,12 @@ impl Metadata {
         unsafe { &*self.attr }
     }
 
-    pub fn len(&self) -> u64 {
-        self.attr().size
+    pub fn len(&self) -> Option<u64> {
+        if self.attr().flags & sys::SSH_FILEXFER_ATTR_SIZE != 0 {
+            Some(self.attr().size)
+        } else {
+            None
+        }
     }
 
     fn name_helper(&self, name: *const c_char) -> Option<&str> {
@@ -434,39 +505,154 @@ impl Metadata {
         self.name_helper(self.attr().group)
     }
 
+    /// Flags the indicate which attributes are present.
+    /// Is a bitmask of `SSH_FILEXFER_ATTR_XXX` constants
     pub fn flags(&self) -> u32 {
         self.attr().flags
     }
 
-    pub fn type_(&self) -> u8 {
-        self.attr().type_
+    /// The owner uid of the file
+    pub fn uid(&self) -> Option<u32> {
+        if self.attr().flags & sys::SSH_FILEXFER_ATTR_UIDGID != 0 {
+            Some(self.attr().uid)
+        } else {
+            None
+        }
     }
 
-    pub fn uid(&self) -> u32 {
-        self.attr().uid
+    /// The owner gid of the file
+    pub fn gid(&self) -> Option<u32> {
+        if self.attr().flags & sys::SSH_FILEXFER_ATTR_UIDGID != 0 {
+            Some(self.attr().gid)
+        } else {
+            None
+        }
     }
 
-    pub fn gid(&self) -> u32 {
-        self.attr().gid
+    /// The unix mode_t permission bits
+    pub fn permissions(&self) -> Option<u32> {
+        if self.attr().flags & sys::SSH_FILEXFER_ATTR_PERMISSIONS != 0 {
+            Some(self.attr().permissions)
+        } else {
+            None
+        }
     }
 
-    pub fn permissions(&self) -> u32 {
-        self.attr().permissions
+    /// The type of the file decoded from the permissions
+    pub fn file_type(&self) -> Option<FileType> {
+        if self.attr().flags & sys::SSH_FILEXFER_ATTR_PERMISSIONS != 0 {
+            Some(match self.attr().type_ as u32 {
+                sys::SSH_FILEXFER_TYPE_SPECIAL => FileType::Special,
+                sys::SSH_FILEXFER_TYPE_SYMLINK => FileType::Symlink,
+                sys::SSH_FILEXFER_TYPE_REGULAR => FileType::Regular,
+                sys::SSH_FILEXFER_TYPE_DIRECTORY => FileType::Directory,
+                sys::SSH_FILEXFER_TYPE_UNKNOWN | _ => FileType::Unknown,
+            })
+        } else {
+            None
+        }
     }
 
+    /// The last-accessed time
     pub fn accessed(&self) -> Option<SystemTime> {
-        let secs = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().atime64))?;
-        secs.checked_add(Duration::from_nanos(self.attr().atime_nseconds.into()))
+        let duration = if self.attr().flags & sys::SSH_FILEXFER_ATTR_ACCESSTIME != 0 {
+            Duration::from_secs(self.attr().atime64)
+                + Duration::from_nanos(
+                    if self.attr().flags & sys::SSH_FILEXFER_ATTR_SUBSECOND_TIMES != 0 {
+                        self.attr().atime_nseconds.into()
+                    } else {
+                        0
+                    },
+                )
+        } else if self.attr().flags & sys::SSH_FILEXFER_ATTR_ACMODTIME != 0 {
+            Duration::from_secs(self.attr().atime.into())
+        } else {
+            return None;
+        };
+        SystemTime::UNIX_EPOCH.checked_add(duration)
     }
 
+    /// The file creation time
     pub fn created(&self) -> Option<SystemTime> {
-        let secs =
-            SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().createtime))?;
-        secs.checked_add(Duration::from_nanos(self.attr().createtime_nseconds.into()))
+        let duration = if self.attr().flags & sys::SSH_FILEXFER_ATTR_CREATETIME != 0 {
+            Duration::from_secs(self.attr().createtime)
+                + Duration::from_nanos(
+                    if self.attr().flags & sys::SSH_FILEXFER_ATTR_SUBSECOND_TIMES != 0 {
+                        self.attr().createtime_nseconds.into()
+                    } else {
+                        0
+                    },
+                )
+        } else {
+            return None;
+        };
+        SystemTime::UNIX_EPOCH.checked_add(duration)
     }
 
+    /// The file modification time
     pub fn modified(&self) -> Option<SystemTime> {
-        let secs = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().mtime64))?;
-        secs.checked_add(Duration::from_nanos(self.attr().mtime_nseconds.into()))
+        let duration = if self.attr().flags & sys::SSH_FILEXFER_ATTR_MODIFYTIME != 0 {
+            Duration::from_secs(self.attr().mtime64)
+                + Duration::from_nanos(
+                    if self.attr().flags & sys::SSH_FILEXFER_ATTR_SUBSECOND_TIMES != 0 {
+                        self.attr().mtime_nseconds.into()
+                    } else {
+                        0
+                    },
+                )
+        } else if self.attr().flags & sys::SSH_FILEXFER_ATTR_ACMODTIME != 0 {
+            Duration::from_secs(self.attr().mtime.into())
+        } else {
+            return None;
+        };
+        SystemTime::UNIX_EPOCH.checked_add(duration)
     }
+}
+
+pub struct SftpDir {
+    pub(crate) sess: Arc<Mutex<SessionHolder>>,
+    pub(crate) dir_inner: sys::sftp_dir,
+    pub(crate) sftp: sys::sftp_session,
+}
+
+unsafe impl Send for SftpDir {}
+
+impl Drop for SftpDir {
+    fn drop(&mut self) {
+        let (_sess, dir) = self.lock_session();
+        unsafe {
+            sys::sftp_closedir(dir);
+        }
+    }
+}
+
+impl SftpDir {
+    fn lock_session(&self) -> (MutexGuard<SessionHolder>, sys::sftp_dir) {
+        (self.sess.lock().unwrap(), self.dir_inner)
+    }
+
+    /// Read the next entry from the directory.
+    /// Returns None if there are no more entries.
+    pub fn read_dir(&self) -> Option<SshResult<Metadata>> {
+        let (_sess, dir) = self.lock_session();
+        let attr = unsafe { sys::sftp_readdir(self.sftp, dir) };
+        if attr.is_null() {
+            if unsafe { sys::sftp_dir_eof(dir) } == 1 {
+                None
+            } else {
+                Some(Err(Error::Sftp(SftpError::from_session(self.sftp))))
+            }
+        } else {
+            Some(Ok(Metadata { attr }))
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FileType {
+    Special,
+    Symlink,
+    Regular,
+    Directory,
+    Unknown,
 }
