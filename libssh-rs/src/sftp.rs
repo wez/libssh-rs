@@ -1,7 +1,10 @@
 use crate::{Error, SessionHolder, SshResult};
 use libssh_rs_sys as sys;
+use std::convert::TryInto;
 use std::ffi::{CStr, CString};
+use std::os::raw::{c_char, c_int};
 use std::sync::{Arc, Mutex, MutexGuard};
+use std::time::{Duration, SystemTime};
 use thiserror::Error;
 
 #[derive(Error, Debug, PartialEq, Eq)]
@@ -97,6 +100,70 @@ impl Sftp {
         }
     }
 
+    /// Change certain metadata attributes of the named file.
+    pub fn set_metadata(&self, filename: &str, metadata: &SetAttributes) -> SshResult<()> {
+        let filename = CString::new(filename)?;
+        let (_sess, sftp) = self.lock_session();
+        let mut attributes: sys::sftp_attributes_struct = unsafe { std::mem::zeroed() };
+
+        if let Some(size) = metadata.size {
+            attributes.size = size;
+            attributes.flags |= sys::SSH_FILEXFER_ATTR_SIZE;
+        }
+
+        if let Some((uid, gid)) = metadata.uid_gid {
+            attributes.uid = uid;
+            attributes.gid = gid;
+            attributes.flags |= sys::SSH_FILEXFER_ATTR_UIDGID;
+        }
+
+        if let Some(perms) = metadata.permissions {
+            attributes.permissions = perms;
+            attributes.flags |= sys::SSH_FILEXFER_ATTR_PERMISSIONS;
+        }
+
+        if let Some((atime, mtime)) = metadata.atime_mtime {
+            attributes.atime = atime
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("SystemTime to always be > UNIX_EPOCH")
+                .as_secs()
+                .try_into()
+                .unwrap();
+            attributes.mtime = mtime
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .expect("SystemTime to always be > UNIX_EPOCH")
+                .as_secs()
+                .try_into()
+                .unwrap();
+            attributes.flags |= sys::SSH_FILEXFER_ATTR_ACMODTIME;
+        }
+
+        let res = unsafe { sys::sftp_setstat(sftp, filename.as_ptr(), &mut attributes) };
+        SftpError::result(sftp, res, ())
+    }
+
+    pub fn metadata(&self, filename: &str) -> SshResult<Metadata> {
+        let filename = CString::new(filename)?;
+        let (_sess, sftp) = self.lock_session();
+        let attr = unsafe { sys::sftp_stat(sftp, filename.as_ptr()) };
+        if attr.is_null() {
+            Err(Error::Sftp(SftpError::from_session(sftp)))
+        } else {
+            Ok(Metadata { attr })
+        }
+    }
+
+    pub fn symlink_metadata(&self, filename: &str) -> SshResult<Metadata> {
+        let filename = CString::new(filename)?;
+        let (_sess, sftp) = self.lock_session();
+        let attr = unsafe { sys::sftp_lstat(sftp, filename.as_ptr()) };
+        if attr.is_null() {
+            Err(Error::Sftp(SftpError::from_session(sftp)))
+        } else {
+            Ok(Metadata { attr })
+        }
+    }
+
     pub fn rename(&self, filename: &str, new_name: &str) -> SshResult<()> {
         let filename = CString::new(filename)?;
         let new_name = CString::new(new_name)?;
@@ -125,5 +192,281 @@ impl Sftp {
         let (_sess, sftp) = self.lock_session();
         let res = unsafe { sys::sftp_symlink(sftp, target.as_ptr(), dest.as_ptr()) };
         SftpError::result(sftp, res, ())
+    }
+
+    pub fn open(
+        &self,
+        filename: &str,
+        accesstype: c_int,
+        mode: sys::mode_t,
+    ) -> SshResult<SftpFile> {
+        let filename = CString::new(filename)?;
+        let (_sess, sftp) = self.lock_session();
+        let res = unsafe { sys::sftp_open(sftp, filename.as_ptr(), accesstype, mode) };
+        if res.is_null() {
+            Err(Error::Sftp(SftpError::from_session(sftp)))
+        } else {
+            Ok(SftpFile {
+                sess: Arc::clone(&self.sess),
+                file_inner: res,
+                sftp: sftp,
+            })
+        }
+    }
+}
+
+pub struct SftpFile {
+    pub(crate) sess: Arc<Mutex<SessionHolder>>,
+    pub(crate) file_inner: sys::sftp_file,
+    pub(crate) sftp: sys::sftp_session,
+}
+
+unsafe impl Send for SftpFile {}
+
+impl Drop for SftpFile {
+    fn drop(&mut self) {
+        let (_sess, file) = self.lock_session();
+        unsafe {
+            sys::sftp_close(file);
+        }
+    }
+}
+
+impl SftpFile {
+    fn lock_session(&self) -> (MutexGuard<SessionHolder>, sys::sftp_file) {
+        (self.sess.lock().unwrap(), self.file_inner)
+    }
+
+    pub fn set_blocking(&self, blocking: bool) {
+        let (_sess, file) = self.lock_session();
+        if blocking {
+            unsafe { sys::sftp_file_set_blocking(file) }
+        } else {
+            unsafe { sys::sftp_file_set_nonblocking(file) }
+        }
+    }
+
+    pub fn stat(&self) -> SshResult<Metadata> {
+        let (_sess, file) = self.lock_session();
+        let attr = unsafe { sys::sftp_fstat(file) };
+        if attr.is_null() {
+            Err(Error::Sftp(SftpError::from_session(self.sftp)))
+        } else {
+            Ok(Metadata { attr })
+        }
+    }
+}
+
+fn io_err_from_sftp(sftp: sys::sftp_session, reason: &str) -> std::io::Error {
+    use std::io::ErrorKind;
+    let res = unsafe { sys::sftp_get_error(sftp) };
+    let kind = match res as u32 {
+        sys::SSH_FX_OK => ErrorKind::Other,
+        sys::SSH_FX_EOF => ErrorKind::UnexpectedEof,
+        sys::SSH_FX_NO_SUCH_FILE => ErrorKind::NotFound,
+        sys::SSH_FX_PERMISSION_DENIED => ErrorKind::PermissionDenied,
+        sys::SSH_FX_FAILURE => ErrorKind::Other,
+        sys::SSH_FX_BAD_MESSAGE => ErrorKind::Other,
+        sys::SSH_FX_NO_CONNECTION => ErrorKind::NotConnected,
+        sys::SSH_FX_CONNECTION_LOST => ErrorKind::ConnectionReset,
+        sys::SSH_FX_OP_UNSUPPORTED => ErrorKind::Unsupported,
+        sys::SSH_FX_INVALID_HANDLE => ErrorKind::Other,
+        sys::SSH_FX_NO_SUCH_PATH => ErrorKind::NotFound,
+        sys::SSH_FX_FILE_ALREADY_EXISTS => ErrorKind::AlreadyExists,
+        sys::SSH_FX_WRITE_PROTECT => ErrorKind::Other,
+        sys::SSH_FX_NO_MEDIA => ErrorKind::Other,
+        _ => ErrorKind::Other,
+    };
+    std::io::Error::new(kind, format!("{}: sftp error code {}", reason, res))
+}
+
+impl std::io::Read for SftpFile {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let (_sess, file) = self.lock_session();
+
+        let res = unsafe { sys::sftp_read(file, buf.as_mut_ptr() as _, buf.len()) };
+
+        if res >= 0 {
+            Ok(res as usize)
+        } else {
+            let err = io_err_from_sftp(self.sftp, "read");
+            if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                Ok(0)
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+impl std::io::Write for SftpFile {
+    fn flush(&mut self) -> std::io::Result<()> {
+        let (_sess, file) = self.lock_session();
+        let res = unsafe { sys::sftp_fsync(file) };
+        if res == 0 {
+            Ok(())
+        } else {
+            Err(io_err_from_sftp(self.sftp, "fsync"))
+        }
+    }
+
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        let (_sess, file) = self.lock_session();
+
+        let res = unsafe { sys::sftp_write(file, buf.as_ptr() as _, buf.len()) };
+
+        if res >= 0 {
+            Ok(res as usize)
+        } else {
+            let err = io_err_from_sftp(self.sftp, "write");
+            if err.kind() == std::io::ErrorKind::UnexpectedEof {
+                Ok(0)
+            } else {
+                Err(err)
+            }
+        }
+    }
+}
+
+impl std::io::Seek for SftpFile {
+    fn seek(&mut self, pos: std::io::SeekFrom) -> std::io::Result<u64> {
+        let (_sess, file) = self.lock_session();
+        match pos {
+            std::io::SeekFrom::Start(p) => {
+                let res = unsafe { sys::sftp_seek64(file, p) };
+                if res == 0 {
+                    Ok(p)
+                } else {
+                    Err(io_err_from_sftp(self.sftp, "seek"))
+                }
+            }
+            std::io::SeekFrom::End(p) => {
+                let end = self.stat().map_err(|e| e)?.len();
+                let target = if p < 0 {
+                    end.saturating_sub(p.abs() as u64)
+                } else {
+                    end.saturating_add(p as u64)
+                };
+                let res = unsafe { sys::sftp_seek64(file, target) };
+                if res == 0 {
+                    Ok(target)
+                } else {
+                    Err(io_err_from_sftp(self.sftp, "seek"))
+                }
+            }
+            std::io::SeekFrom::Current(p) => {
+                let current = unsafe { sys::sftp_tell(file) };
+                let target = if p < 0 {
+                    current.saturating_sub(p.abs() as u64)
+                } else {
+                    current.saturating_add(p as u64)
+                };
+                let res = unsafe { sys::sftp_seek64(file, target) };
+                if res == 0 {
+                    Ok(target)
+                } else {
+                    Err(io_err_from_sftp(self.sftp, "seek"))
+                }
+            }
+        }
+    }
+
+    fn stream_position(&mut self) -> std::io::Result<u64> {
+        let (_sess, file) = self.lock_session();
+        let current = unsafe { sys::sftp_tell(file) };
+        Ok(current)
+    }
+}
+
+pub struct SetAttributes {
+    pub size: Option<u64>,
+    pub uid_gid: Option<(sys::uid_t, sys::gid_t)>,
+    pub permissions: Option<u32>,
+    /// Note that the protocol/libssh implementation has
+    /// 1-second granularity for access and mtime
+    pub atime_mtime: Option<(SystemTime, SystemTime)>,
+}
+
+pub struct Metadata {
+    attr: sys::sftp_attributes,
+}
+
+impl Drop for Metadata {
+    fn drop(&mut self) {
+        unsafe { sys::sftp_attributes_free(self.attr) }
+    }
+}
+
+impl Metadata {
+    fn attr(&self) -> &sys::sftp_attributes_struct {
+        unsafe { &*self.attr }
+    }
+
+    pub fn len(&self) -> u64 {
+        self.attr().size
+    }
+
+    fn name_helper(&self, name: *const c_char) -> Option<&str> {
+        if name.is_null() {
+            None
+        } else {
+            unsafe { CStr::from_ptr(name) }.to_str().ok()
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        self.name_helper(self.attr().name)
+    }
+
+    /// libssh docs say that this is the ls -l output on openssh
+    /// servers, but is unreliable with other servers
+    pub fn long_name(&self) -> Option<&str> {
+        self.name_helper(self.attr().longname)
+    }
+
+    /// Set in openssh version 4 and up
+    pub fn owner(&self) -> Option<&str> {
+        self.name_helper(self.attr().owner)
+    }
+
+    /// Set in openssh version 4 and up
+    pub fn group(&self) -> Option<&str> {
+        self.name_helper(self.attr().group)
+    }
+
+    pub fn flags(&self) -> u32 {
+        self.attr().flags
+    }
+
+    pub fn type_(&self) -> u8 {
+        self.attr().type_
+    }
+
+    pub fn uid(&self) -> u32 {
+        self.attr().uid
+    }
+
+    pub fn gid(&self) -> u32 {
+        self.attr().gid
+    }
+
+    pub fn permissions(&self) -> u32 {
+        self.attr().permissions
+    }
+
+    pub fn accessed(&self) -> Option<SystemTime> {
+        let secs = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().atime64))?;
+        secs.checked_add(Duration::from_nanos(self.attr().atime_nseconds.into()))
+    }
+
+    pub fn created(&self) -> Option<SystemTime> {
+        let secs =
+            SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().createtime))?;
+        secs.checked_add(Duration::from_nanos(self.attr().createtime_nseconds.into()))
+    }
+
+    pub fn modified(&self) -> Option<SystemTime> {
+        let secs = SystemTime::UNIX_EPOCH.checked_add(Duration::from_secs(self.attr().mtime64))?;
+        secs.checked_add(Duration::from_nanos(self.attr().mtime_nseconds.into()))
     }
 }
