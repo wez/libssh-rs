@@ -199,6 +199,7 @@ fn main() {
         "pki_ed25519.c",
         "pki_ed25519_common.c",
         "poll.c",
+        "sftp.c",
         "scp.c",
         "session.c",
         "socket.c",
