@@ -547,6 +547,14 @@ impl Session {
                     opt_cstring_to_cstr(&known_hosts) as _,
                 )
             },
+            SshOption::ProxyCommand(cmd) => unsafe {
+                let cmd = opt_string_to_cstring(cmd);
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_PROXYCOMMAND,
+                    opt_cstring_to_cstr(&cmd) as _,
+                )
+            },
             SshOption::Port(port) => {
                 let port: c_uint = port.into();
                 unsafe {
@@ -1123,6 +1131,10 @@ pub enum SshOption {
     /// If the value is None, the directory is set to the default known hosts file, normally ~/.ssh/known_hosts.
     /// The known hosts file is used to certify remote hosts are genuine. It may include "%d" which will be replaced by the user home directory.
     KnownHosts(Option<String>),
+
+    /// Configures the ProxyCommand ssh option, which is used to establish an
+    /// alternative transport to using a direct TCP connection
+    ProxyCommand(Option<String>),
 
     /// Add a new identity file (const char *, format string) to the identity list.
     /// By default identity, id_dsa and id_rsa are checked.
