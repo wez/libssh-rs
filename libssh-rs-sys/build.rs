@@ -101,7 +101,7 @@ fn main() {
     }
 
     let compiler = cfg.get_compiler();
-    if compiler.is_like_gnu() {
+    if compiler.is_like_gnu() || compiler.is_like_clang() {
         cfg.define("HAVE_COMPILER__FUNCTION__", Some("1"));
         cfg.define("HAVE_COMPILER__FUNC__", Some("1"));
         cfg.define("HAVE_GCC_THREAD_LOCAL_STORAGE", Some("1"));
