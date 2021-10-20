@@ -24,6 +24,9 @@ fn main() {
     println!("cargo:include={}", include.display());
     println!("cargo:root={}", dst.display());
 
+    let openssl_version = std::env::var("DEP_OPENSSL_VERSION_NUMBER").unwrap();
+    let openssl_version = u64::from_str_radix(&openssl_version, 16).unwrap();
+
     let target = std::env::var("TARGET").unwrap();
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
     cfg.define("HAVE_GETADDRINFO", Some("1"));
@@ -37,12 +40,20 @@ fn main() {
     cfg.define("HAVE_ECC", Some("1"));
     cfg.define("HAVE_DSA", Some("1"));
     cfg.define("HAVE_OPENSSL_EC_H", Some("1"));
-    cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
-    cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
-    cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
-    // cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
+
+    if openssl_version >= 0x1_01_01_00_0 {
+        cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
+    }
+
+    if openssl_version >= 0x1_00_00_00_0 {
+        cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
+        cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
+    }
+    if openssl_version >= 0x3_00_00_00_0 {
+        cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
+    }
     // cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
-    cfg.define("HAVE_OPENSSL_IA32CAP_LOC", Some("1"));
+
     cfg.define("HAVE_STDINT_H", Some("1"));
     cfg.define("WITH_ZLIB", Some("1"));
     cfg.define("WITH_GEX", Some("1"));
