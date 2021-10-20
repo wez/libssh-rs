@@ -45,10 +45,13 @@ fn main() {
         cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
     }
 
-    if openssl_version >= 0x1_00_00_00_0 {
-        cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
-        cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
-    } else {
+    /* Don't bother setting these: we libssh has a fallback in any cas,
+     * and the documentation doesn't specify when they were introduced,
+    cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
+    cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
+    */
+
+    if openssl_version < 0x1_01_00_00_0 {
         cfg.file("vendored/src/libcrypto-compat.c");
     }
 
