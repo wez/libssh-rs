@@ -45,7 +45,7 @@ fn main() {
         cfg.define("HAVE_OPENSSL_EVP_CHACHA20", Some("1"));
     }
 
-    /* Don't bother setting these: we libssh has a fallback in any cas,
+    /* Don't bother setting these: libssh has a fallback in any case,
      * and the documentation doesn't specify when they were introduced,
     cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
     cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
