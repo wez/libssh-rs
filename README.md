@@ -6,11 +6,18 @@
 
 Bindings to [libssh](https://www.libssh.org/).
 
-This repo is home to the `libssh-rs-sys` crate, which provides FFI bindings to `libssh`.
+This repo is home to the `libssh-rs-sys` crate, which provides unsafe FFI bindings to `libssh`,
+and the `libssh-rs` crate which provides safe bindings based on `libssh-rs-sys`.
 
 ## Features
 
 The `vendored` feature causes a static version of libssh to be compiled and linked into your program.
+If no system `libssh` is detected at build time, or that system library is too old, then the vendored
+`libssh` implementation will be used automatically. Note that the `libssh-rs` bindings make use of
+a couple of new interfaces that have not made it into a released version of `libssh` at the time
+of writing this note, so all users will be effectively running with `vendored` enabled until libssh
+releases version `0.9.7`.
+
 The `vendored-openssl` feature causes a vendored copy of `openssl` to be compiled and linked into your program.
 
 On macOS and Windows systems, you most likely want to enable both `vendored` and `vendored-openssl`.
