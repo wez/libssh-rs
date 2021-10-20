@@ -48,8 +48,11 @@ fn main() {
     if openssl_version >= 0x1_00_00_00_0 {
         cfg.define("HAVE_OPENSSL_EVP_DIGESTSIGN", Some("1"));
         cfg.define("HAVE_OPENSSL_EVP_DIGESTVERIFY", Some("1"));
+    } else {
+        cfg.file("vendored/src/libcrypto-compat.c");
     }
-    if openssl_version >= 0x3_00_00_00_0 {
+
+    if false && openssl_version >= 0x3_00_00_00_0 {
         cfg.define("HAVE_OPENSSL_EVP_KDF_CTX_NEW_ID", Some("1"));
     }
     // cfg.define("HAVE_OPENSSL_FIPS_MODE", Some("1"));
