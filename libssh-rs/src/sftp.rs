@@ -411,7 +411,7 @@ impl std::io::Seek for SftpFile {
                 }
             }
             std::io::SeekFrom::Current(p) => {
-                let current = unsafe { sys::sftp_tell(file) };
+                let current = unsafe { sys::sftp_tell64(file) };
                 let target = if p < 0 {
                     current.saturating_sub(p.abs() as u64)
                 } else {
@@ -429,7 +429,7 @@ impl std::io::Seek for SftpFile {
 
     fn stream_position(&mut self) -> std::io::Result<u64> {
         let (_sess, file) = self.lock_session();
-        let current = unsafe { sys::sftp_tell(file) };
+        let current = unsafe { sys::sftp_tell64(file) };
         Ok(current)
     }
 }

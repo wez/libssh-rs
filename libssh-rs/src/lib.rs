@@ -970,7 +970,7 @@ impl std::os::unix::io::AsRawFd for Session {
 #[cfg(windows)]
 impl std::os::windows::io::AsRawSocket for Session {
     fn as_raw_socket(&self) -> RawSocket {
-        unsafe { sys::ssh_get_fd(**self.lock_session()) }
+        unsafe { sys::ssh_get_fd(**self.lock_session()) as RawSocket }
     }
 }
 
