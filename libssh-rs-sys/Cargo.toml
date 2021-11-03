@@ -4,6 +4,9 @@ version = "0.1.0"
 authors = ["Wez Furlong"]
 edition = "2018"
 links = "libssh"
+repository = "https://github.com/wez/libssh-rs"
+description = "Native bindings to the libssh library"
+license = "MIT"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
