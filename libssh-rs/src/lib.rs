@@ -1252,7 +1252,7 @@ fn opt_string_to_cstring(s: Option<String>) -> Option<CString> {
     s.and_then(|s| CString::new(s).ok())
 }
 
-fn opt_cstring_to_cstr(s: &Option<CString>) -> *const i8 {
+fn opt_cstring_to_cstr(s: &Option<CString>) -> *const ::std::os::raw::c_char {
     match s {
         Some(s) => s.as_ptr(),
         None => std::ptr::null(),
