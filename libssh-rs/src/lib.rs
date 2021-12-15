@@ -523,6 +523,14 @@ impl Session {
                     name.as_ptr() as _,
                 )
             },
+            SshOption::IdentityAgent(name) => unsafe {
+                let name = opt_string_to_cstring(name);
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_IDENTITY_AGENT,
+                    opt_cstring_to_cstr(&name) as _,
+                )
+            },
             SshOption::User(name) => unsafe {
                 let name = opt_string_to_cstring(name);
                 sys::ssh_options_set(
@@ -1143,6 +1151,8 @@ pub enum SshOption {
 
     /// Set a timeout for the connection
     Timeout(Duration),
+
+    IdentityAgent(Option<String>),
 }
 
 /// Indicates the state of known-host matching, an important set
