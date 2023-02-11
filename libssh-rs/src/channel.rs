@@ -1,7 +1,7 @@
 use crate::{opt_cstring_to_cstr, opt_str_to_cstring, Error, SessionHolder, SshResult};
 use libssh_rs_sys as sys;
 use std::convert::TryInto;
-use std::ffi::CString;
+use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -34,6 +34,8 @@ use std::time::Duration;
 pub struct Channel {
     pub(crate) sess: Arc<Mutex<SessionHolder>>,
     pub(crate) chan_inner: sys::ssh_channel,
+    _callbacks: Box<sys::ssh_channel_callbacks_struct>,
+    callback_state: Box<CallbackState>,
 }
 
 unsafe impl Send for Channel {}
@@ -47,6 +49,58 @@ impl Drop for Channel {
     }
 }
 
+/// State visible to the callbacks
+struct CallbackState {
+    signal_state: Mutex<Option<SignalState>>,
+}
+
+#[derive(Clone, Debug)]
+pub struct SignalState {
+    pub signal_name: Option<String>,
+    pub core_dumped: bool,
+    pub error_message: Option<String>,
+    pub language: Option<String>,
+}
+
+fn cstr_to_opt_string(cstr: *const ::std::os::raw::c_char) -> Option<String> {
+    if cstr.is_null() {
+        return None;
+    }
+
+    Some(
+        unsafe { CStr::from_ptr(cstr) }
+            .to_string_lossy()
+            .to_string(),
+    )
+}
+
+unsafe extern "C" fn handle_exit_signal(
+    _session: sys::ssh_session,
+    _channel: sys::ssh_channel,
+    signal: *const ::std::os::raw::c_char,
+    core_dumped: ::std::os::raw::c_int,
+    errmsg: *const ::std::os::raw::c_char,
+    lang: *const ::std::os::raw::c_char,
+    userdata: *mut ::std::os::raw::c_void,
+) {
+    let callback_state: &CallbackState = &*(userdata as *const CallbackState);
+
+    let signal_name = cstr_to_opt_string(signal);
+    let error_message = cstr_to_opt_string(errmsg);
+    let language = cstr_to_opt_string(lang);
+
+    callback_state
+        .signal_state
+        .lock()
+        .unwrap()
+        .replace(SignalState {
+            signal_name,
+            core_dumped: if core_dumped == 0 { false } else { true },
+            error_message,
+            language,
+        });
+}
+
 impl Channel {
     /// Accept an X11 forwarding channel.
     /// Returns a newly created `Channel`, or `None` if no X11 request from the server.
@@ -57,10 +111,42 @@ impl Channel {
         if chan.is_null() {
             None
         } else {
-            Some(Self {
-                sess: Arc::clone(&self.sess),
-                chan_inner: chan,
-            })
+            Some(Self::new(&self.sess, chan))
+        }
+    }
+
+    pub(crate) fn new(sess: &Arc<Mutex<SessionHolder>>, chan: sys::ssh_channel) -> Self {
+        let callback_state = Box::new(CallbackState {
+            signal_state: Mutex::new(None),
+        });
+
+        let callbacks = Box::new(sys::ssh_channel_callbacks_struct {
+            size: std::mem::size_of::<sys::ssh_channel_callbacks_struct>(),
+            userdata: callback_state.as_ref() as *const CallbackState as *mut _,
+            channel_data_function: None,
+            channel_eof_function: None,
+            channel_close_function: None,
+            channel_signal_function: None,
+            channel_exit_status_function: None,
+            channel_exit_signal_function: Some(handle_exit_signal),
+            channel_pty_request_function: None,
+            channel_shell_request_function: None,
+            channel_auth_agent_req_function: None,
+            channel_x11_req_function: None,
+            channel_pty_window_change_function: None,
+            channel_exec_request_function: None,
+            channel_env_request_function: None,
+            channel_subsystem_request_function: None,
+            channel_write_wontblock_function: None,
+        });
+
+        unsafe { sys::ssh_set_channel_callbacks(chan, callbacks.as_ref() as *const _ as *mut _) };
+
+        Self {
+            sess: Arc::clone(&sess),
+            chan_inner: chan,
+            callback_state,
+            _callbacks: callbacks,
         }
     }
 
@@ -90,6 +176,14 @@ impl Channel {
         } else {
             Some(res)
         }
+    }
+
+    /// Get the exit signal status of the channel.
+    /// If the channel was closed/terminated due to a signal, and the
+    /// remote system supports the signal concept, the signal state
+    /// will be set and reported here.
+    pub fn get_exit_signal(&self) -> Option<SignalState> {
+        self.callback_state.signal_state.lock().unwrap().clone()
     }
 
     /// Check if the channel is closed or not.

@@ -326,10 +326,7 @@ impl Session {
                 Err(Error::fatal("ssh_channel_new failed"))
             }
         } else {
-            Ok(Channel {
-                sess: Arc::clone(&self.sess),
-                chan_inner: chan,
-            })
+            Ok(Channel::new(&self.sess, chan))
         }
     }
 
@@ -918,10 +915,7 @@ impl Session {
                 Err(Error::TryAgain)
             }
         } else {
-            let channel = Channel {
-                sess: Arc::clone(&self.sess),
-                chan_inner: chan,
-            };
+            let channel = Channel::new(&self.sess, chan);
 
             Ok((port as u16, channel))
         }
