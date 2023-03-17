@@ -593,6 +593,22 @@ impl Session {
                     &micros as *const _ as _,
                 )
             },
+            SshOption::CiphersCS(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_CIPHERS_C_S,
+                    name.as_ptr() as _,
+                )
+            },
+            SshOption::CiphersSC(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_CIPHERS_S_C,
+                    name.as_ptr() as _,
+                )
+            },
         };
 
         if res == 0 {
@@ -1156,9 +1172,13 @@ pub enum SshOption {
 
     IdentityAgent(Option<String>),
     /// Set the preferred public key algorithms to be used for
-    /// authentication as a comma-separated list). ex:
+    /// authentication as a comma-separated list. ex:
     /// ssh-rsa,rsa-sha2-256,ssh-dss,ecdh-sha2-nistp256
     PublicKeyAcceptedTypes(String),
+    ///Set the symmetric cipher client to server as a comma-separated list.
+    CiphersCS(String),
+    ///Set the symmetric cipher server to client as a comma-separated list.
+    CiphersSC(String),
 }
 
 /// Indicates the state of known-host matching, an important set
