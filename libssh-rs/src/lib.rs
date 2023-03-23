@@ -31,6 +31,17 @@ pub use crate::sftp::*;
 struct LibraryState {}
 impl LibraryState {
     pub fn new() -> Option<Self> {
+        // Force openssl to initialize.
+        // In theory, we don't need this, but in practice we do because of
+        // this bug:
+        // <https://github.com/openssl/openssl/issues/6214>
+        // which weirdly requires that *all* openssl threads be joined before
+        // the process exits, which is an unrealistic expectation on behalf
+        // of that library.
+        // That was worked around in openssl_sys:
+        // <https://github.com/sfackler/rust-openssl/pull/1324>
+        // which tells openssl to skip the process-wide shutdown.
+        openssl_sys::init();
         let res = unsafe { sys::ssh_init() };
         if res != sys::SSH_OK as i32 {
             None
