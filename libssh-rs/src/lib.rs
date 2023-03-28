@@ -16,6 +16,7 @@ use std::os::raw::{c_int, c_uint, c_ulong};
 use std::os::unix::io::RawFd as RawSocket;
 #[cfg(windows)]
 use std::os::windows::io::RawSocket;
+use std::ptr::null_mut;
 use std::sync::Once;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
@@ -1147,6 +1148,21 @@ impl SshKey {
                 .to_string();
             unsafe { sys::ssh_string_free_char(hexa) };
             Ok(res)
+        }
+    }
+
+    pub fn from_privkey_base64(b64_key: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
+        let b64_key = CString::new(b64_key)
+            .map_err(|e| Error::Fatal(format!("Failed to parse ssh key: {:?}", e)))?;
+        let passphrase = opt_str_to_cstring(passphrase);
+        unsafe {
+            let mut key = sys::ssh_key_new();
+            if sys::ssh_pki_import_privkey_base64(b64_key.as_ptr(), opt_cstring_to_cstr(&passphrase),
+                                                  None, null_mut(), &mut key) != sys::SSH_OK as i32 {
+                sys::ssh_key_free(key);
+                return Err(Error::Fatal(format!("Failed to parse ssh key")));
+            }
+            return Ok(SshKey { key });
         }
     }
 }
