@@ -1153,11 +1153,26 @@ impl SshKey {
 
     pub fn from_privkey_base64(b64_key: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
         let b64_key = CString::new(b64_key)
-            .map_err(|e| Error::Fatal(format!("Failed to parse ssh key: {:?}", e)))?;
+            .map_err(|e| Error::Fatal(format!("Failed to process ssh key: {:?}", e)))?;
         let passphrase = opt_str_to_cstring(passphrase);
         unsafe {
             let mut key = sys::ssh_key_new();
             if sys::ssh_pki_import_privkey_base64(b64_key.as_ptr(), opt_cstring_to_cstr(&passphrase),
+                                                  None, null_mut(), &mut key) != sys::SSH_OK as i32 {
+                sys::ssh_key_free(key);
+                return Err(Error::Fatal(format!("Failed to parse ssh key")));
+            }
+            return Ok(SshKey { key });
+        }
+    }
+
+    pub fn from_privkey_file(filename: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
+        let filename = CString::new(filename)
+            .map_err(|e| Error::Fatal(format!("Failed to process filename: {:?}", e)))?;
+        let passphrase = opt_str_to_cstring(passphrase);
+        unsafe {
+            let mut key = sys::ssh_key_new();
+            if sys::ssh_pki_import_privkey_file(filename.as_ptr(), opt_cstring_to_cstr(&passphrase),
                                                   None, null_mut(), &mut key) != sys::SSH_OK as i32 {
                 sys::ssh_key_free(key);
                 return Err(Error::Fatal(format!("Failed to parse ssh key")));
