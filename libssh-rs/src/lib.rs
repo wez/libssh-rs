@@ -650,6 +650,33 @@ impl Session {
         }
     }
 
+    /// Authenticate with public/private key or certificate.
+    ///
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    pub fn userauth_publickey(
+        &self,
+        username: Option<&str>,
+        privkey: &SshKey,
+    ) -> SshResult<AuthStatus> {
+        let sess = self.lock_session();
+
+        let username = opt_str_to_cstring(username);
+
+        let res = unsafe {
+            sys::ssh_userauth_publickey(
+                **sess,
+                opt_cstring_to_cstr(&username),
+                privkey.key,
+            )
+        };
+
+        sess.auth_result(res, "authentication error")
+    }
+
     /// Try to authenticate using an ssh agent.
     ///
     /// `username` should almost always be `None` to use the username as
