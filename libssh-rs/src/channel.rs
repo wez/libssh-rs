@@ -42,6 +42,10 @@ unsafe impl Send for Channel {}
 
 impl Drop for Channel {
     fn drop(&mut self) {
+        unsafe {
+            // Prevent any callbacks firing as part the remainder of this drop operation
+            sys::ssh_remove_channel_callbacks(self.chan_inner, self._callbacks.as_mut());
+        }
         let (_sess, chan) = self.lock_session();
         unsafe {
             sys::ssh_channel_free(chan);
