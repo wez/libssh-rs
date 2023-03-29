@@ -44,6 +44,7 @@ impl Drop for Channel {
     fn drop(&mut self) {
         let (_sess, chan) = self.lock_session();
         unsafe {
+            sys::ssh_remove_channel_callbacks(chan, self._callbacks.as_ref() as *const _ as *mut _);
             sys::ssh_channel_free(chan);
         }
     }
