@@ -523,6 +523,22 @@ impl Session {
                     name.as_ptr() as _,
                 )
             },
+            SshOption::KeyExchange(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_KEY_EXCHANGE,
+                    name.as_ptr() as _,
+                )
+            },
+            SshOption::HostKeys(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_HOSTKEYS,
+                    name.as_ptr() as _,
+                )
+            },
             SshOption::PublicKeyAcceptedTypes(name) => unsafe {
                 let name = CString::new(name)?;
                 sys::ssh_options_set(
@@ -1182,6 +1198,12 @@ pub enum SshOption {
     Timeout(Duration),
 
     IdentityAgent(Option<String>),
+    /// Set the key exchange method to be used. ex:
+    /// ecdh-sha2-nistp256,diffie-hellman-group14-sha1,diffie-hellman-group1-sha1
+    KeyExchange(String),
+    /// Set the preferred server host key types. ex:
+    /// ssh-rsa,rsa-sha2-256,ssh-dss,ecdh-sha2-nistp256
+    HostKeys(String),
     /// Set the preferred public key algorithms to be used for
     /// authentication as a comma-separated list. ex:
     /// ssh-rsa,rsa-sha2-256,ssh-dss,ecdh-sha2-nistp256
