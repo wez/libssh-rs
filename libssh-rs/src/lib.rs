@@ -668,11 +668,7 @@ impl Session {
         let username = opt_str_to_cstring(username);
 
         let res = unsafe {
-            sys::ssh_userauth_publickey(
-                **sess,
-                opt_cstring_to_cstr(&username),
-                privkey.key,
-            )
+            sys::ssh_userauth_publickey(**sess, opt_cstring_to_cstr(&username), privkey.key)
         };
 
         sess.auth_result(res, "authentication error")
@@ -1151,14 +1147,20 @@ impl SshKey {
         }
     }
 
-    pub fn from_privkey_base64(b64_key: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
+    pub fn from_privkey_base64(b64_key: &str, passphrase: Option<&str>) -> SshResult<SshKey> {
         let b64_key = CString::new(b64_key)
             .map_err(|e| Error::Fatal(format!("Failed to process ssh key: {:?}", e)))?;
         let passphrase = opt_str_to_cstring(passphrase);
         unsafe {
             let mut key = sys::ssh_key_new();
-            if sys::ssh_pki_import_privkey_base64(b64_key.as_ptr(), opt_cstring_to_cstr(&passphrase),
-                                                  None, null_mut(), &mut key) != sys::SSH_OK as i32 {
+            if sys::ssh_pki_import_privkey_base64(
+                b64_key.as_ptr(),
+                opt_cstring_to_cstr(&passphrase),
+                None,
+                null_mut(),
+                &mut key,
+            ) != sys::SSH_OK as i32
+            {
                 sys::ssh_key_free(key);
                 return Err(Error::Fatal(format!("Failed to parse ssh key")));
             }
@@ -1166,16 +1168,27 @@ impl SshKey {
         }
     }
 
-    pub fn from_privkey_file(filename: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
-        let filename_cstr = CString::new(filename)
-            .map_err(|e| Error::Fatal(format!("Could not make CString from filename '{filename}': {err:#}")))?;
+    pub fn from_privkey_file(filename: &str, passphrase: Option<&str>) -> SshResult<SshKey> {
+        let filename_cstr = CString::new(filename).map_err(|e| {
+            Error::Fatal(format!(
+                "Could not make CString from filename '{filename}': {err:#}"
+            ))
+        })?;
         let passphrase = opt_str_to_cstring(passphrase);
         unsafe {
             let mut key = sys::ssh_key_new();
-            if sys::ssh_pki_import_privkey_file(filename_cstr.as_ptr(), opt_cstring_to_cstr(&passphrase),
-                                                  None, null_mut(), &mut key) != sys::SSH_OK as i32 {
+            if sys::ssh_pki_import_privkey_file(
+                filename_cstr.as_ptr(),
+                opt_cstring_to_cstr(&passphrase),
+                None,
+                null_mut(),
+                &mut key,
+            ) != sys::SSH_OK as i32
+            {
                 sys::ssh_key_free(key);
-                return Err(Error::Fatal(format!("Failed to parse ssh key from file '{filename}'")));
+                return Err(Error::Fatal(format!(
+                    "Failed to parse ssh key from file '{filename}'"
+                )));
             }
             return Ok(SshKey { key });
         }
