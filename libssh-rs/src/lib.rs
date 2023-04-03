@@ -1167,8 +1167,8 @@ impl SshKey {
     }
 
     pub fn from_privkey_file(filename: &str, passphrase:Option<&str>) -> SshResult<SshKey> {
-        let filename = CString::new(filename)
-            .map_err(|e| Error::Fatal(format!("Failed to process filename: {:?}", e)))?;
+        let filename_cstr = CString::new(filename)
+            .map_err(|e| Error::Fatal(format!("Could not make CString from filename '{filename}': {err:#}")))?;
         let passphrase = opt_str_to_cstring(passphrase);
         unsafe {
             let mut key = sys::ssh_key_new();
