@@ -1,0 +1,28 @@
+name: Check code formatting
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "**/*.rs"
+      - ".rustfmt.toml"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "**/*.rs"
+      - ".rustfmt.toml"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check-code-formatting:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: "Install Rust"
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        components: rustfmt
+    - name: Rust formatting
+      run: cargo fmt --all -- --check
