@@ -1171,7 +1171,7 @@ impl SshKey {
     pub fn from_privkey_file(filename: &str, passphrase: Option<&str>) -> SshResult<SshKey> {
         let filename_cstr = CString::new(filename).map_err(|e| {
             Error::Fatal(format!(
-                "Could not make CString from filename '{filename}': {err:#}"
+                "Could not make CString from filename '{filename}': {e:#}"
             ))
         })?;
         let passphrase = opt_str_to_cstring(passphrase);
