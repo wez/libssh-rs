@@ -1191,7 +1191,7 @@ impl SshKey {
             if sys::ssh_pki_import_privkey_file(filename.as_ptr(), opt_cstring_to_cstr(&passphrase),
                                                   None, null_mut(), &mut key) != sys::SSH_OK as i32 {
                 sys::ssh_key_free(key);
-                return Err(Error::Fatal(format!("Failed to parse ssh key")));
+                return Err(Error::Fatal(format!("Failed to parse ssh key from file '{filename}'")));
             }
             return Ok(SshKey { key });
         }
