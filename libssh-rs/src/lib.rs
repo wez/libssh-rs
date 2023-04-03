@@ -1188,7 +1188,7 @@ impl SshKey {
         let passphrase = opt_str_to_cstring(passphrase);
         unsafe {
             let mut key = sys::ssh_key_new();
-            if sys::ssh_pki_import_privkey_file(filename.as_ptr(), opt_cstring_to_cstr(&passphrase),
+            if sys::ssh_pki_import_privkey_file(filename_cstr.as_ptr(), opt_cstring_to_cstr(&passphrase),
                                                   None, null_mut(), &mut key) != sys::SSH_OK as i32 {
                 sys::ssh_key_free(key);
                 return Err(Error::Fatal(format!("Failed to parse ssh key from file '{filename}'")));
