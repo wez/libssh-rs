@@ -667,6 +667,34 @@ impl Session {
         }
     }
 
+    /// Try to authenticate with the given public key.
+    ///
+    /// To avoid unnecessary processing and user interaction, the following
+    /// method is provided for querying whether authentication using the
+    /// 'pubkey' would be possible.
+    /// On success, you want now to use [userauth_publickey](#method.userauth_publickey).
+    /// `username` should almost always be `None` to use the username as
+    /// previously configured via [set_option](#method.set_option) or that
+    /// was loaded from the ssh configuration prior to calling
+    /// [connect](#method.connect), as most ssh server implementations
+    /// do not allow changing the username during authentication.
+    ///
+    pub fn userauth_try_publickey(
+        &self,
+        username: Option<&str>,
+        pubkey: &SshKey,
+    ) -> SshResult<AuthStatus> {
+        let sess = self.lock_session();
+
+        let username = opt_str_to_cstring(username);
+
+        let res = unsafe {
+            sys::ssh_userauth_try_publickey(**sess, opt_cstring_to_cstr(&username), pubkey.key)
+        };
+
+        sess.auth_result(res, "failed authenticating with public key ")
+    }
+
     /// Authenticate with public/private key or certificate.
     ///
     /// `username` should almost always be `None` to use the username as
