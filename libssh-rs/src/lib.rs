@@ -488,6 +488,24 @@ impl Session {
         }
     }
 
+    /// Returns the public key as string
+    pub fn get_pubkey(&self) -> SshResult<String> {
+        let sess = self.lock_session();
+        let sstring = unsafe { sys::ssh_get_pubkey(**sess) };
+        if sstring.is_null() {
+            if let Some(err) = sess.last_error() {
+                Err(err)
+            } else {
+                Err(Error::fatal("failed to get pubkey"))
+            }
+        } else {
+            let key = unsafe { sys::ssh_string_to_char(sstring) };
+            let key_text = unsafe { CStr::from_ptr(key) }.to_string_lossy().to_string();
+            unsafe { sys::ssh_string_free_char(key) };
+            Ok(key_text)
+        }
+    }
+
     /// Configures the session.
     /// You will need to set at least `SshOption::Hostname` prior to
     /// connecting, in order for libssh to know where to connect.
