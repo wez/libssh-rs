@@ -516,6 +516,36 @@ impl Channel {
         }
     }
 
+    /// Do a nonblocking read on the channel.
+    /// A nonblocking read on the specified channel. it will return <= count bytes of data read atomically.
+    pub fn read_nonblocking(&self, buf: &mut [u8], is_stderr: bool) -> SshResult<usize> {
+        let (sess, chan) = self.lock_session();
+
+        let res = unsafe {
+            sys::ssh_channel_read_nonblocking(
+                chan,
+                buf.as_mut_ptr() as _,
+                buf.len() as u32,
+                if is_stderr { 1 } else { 0 },
+            )
+        };
+        match res {
+            sys::SSH_ERROR => {
+                if let Some(err) = sess.last_error() {
+                    Err(err)
+                } else {
+                    Err(Error::fatal("ssh_channel_read_timeout failed"))
+                }
+            }
+            sys::SSH_EOF => Ok(0 as usize),
+            n if n < 0 => Err(Error::Fatal(format!(
+                "ssh_channel_read_timeout returned unexpected {} value",
+                n
+            ))),
+            n => Ok(n as usize),
+        }
+    }
+
     /// Get the remote window size.
     /// This is the maximum amounts of bytes the remote side expects us to send
     /// before growing the window again.
