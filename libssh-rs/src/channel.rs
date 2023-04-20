@@ -539,9 +539,7 @@ impl Channel {
             }
             sys::SSH_EOF => Ok(0 as usize),
             n if n < 0 => Err(Error::Fatal(format!(
-                "ssh_channel_read_timeout returned unexpected {} value",
-                n
-            ))),
+                "ssh_channel_read_timeout returned unexpected value: {n}"))),
             n => Ok(n as usize),
         }
     }
