@@ -663,6 +663,14 @@ impl Session {
                     &value as *const _ as _,
                 )
             },
+            SshOption::GlobalKnownHosts(known_hosts) => unsafe {
+                let known_hosts = opt_string_to_cstring(known_hosts);
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_GLOBAL_KNOWNHOSTS,
+                    opt_cstring_to_cstr(&known_hosts) as _,
+                )
+            },
         };
 
         if res == 0 {
@@ -1339,6 +1347,10 @@ pub enum SshOption {
     CiphersSC(String),
     /// Set it to false to disable automatic processing of per-user and system-wide OpenSSH configuration files.
     ProcessConfig(bool),
+    /// Set the global known hosts file name
+    /// If the value is None, the directory is set to the default known hosts file, normally /etc/ssh/ssh_known_hosts.
+    /// The known hosts file is used to certify remote hosts are genuine.
+    GlobalKnownHosts(Option<String>),
 }
 
 /// Indicates the state of known-host matching, an important set
