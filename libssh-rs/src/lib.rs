@@ -655,6 +655,14 @@ impl Session {
                     name.as_ptr() as _,
                 )
             },
+            SshOption::ProcessConfig(value) => unsafe {
+                let value: c_uint = value.into();
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_PROCESS_CONFIG,
+                    &value as *const _ as _,
+                )
+            },
         };
 
         if res == 0 {
@@ -1329,6 +1337,8 @@ pub enum SshOption {
     CiphersCS(String),
     ///Set the symmetric cipher server to client as a comma-separated list.
     CiphersSC(String),
+    /// Set it to false to disable automatic processing of per-user and system-wide OpenSSH configuration files.
+    ProcessConfig(bool),
 }
 
 /// Indicates the state of known-host matching, an important set
