@@ -9,6 +9,8 @@ typedef unsigned long size_t;
 #include <libssh/ssh2.h>
 EOT
 
+touch vendored/include/libssh/libssh_version.h
+
 bindgen \
   binding.h \
   -o src/lib.rs \
@@ -24,10 +26,11 @@ bindgen \
   --constified-enum ssh_known_hosts_e \
   --constified-enum ssh_auth_e \
   --constified-enum ssh_keytypes_e \
-  --whitelist-type '(sftp|ssh).*' \
-  --whitelist-function '(sftp|ssh).*' \
-  --whitelist-var 'SSH.*' \
-  --size_t-is-usize \
+  --allowlist-type '(sftp|ssh).*' \
+  --allowlist-function '(sftp|ssh).*' \
+  --allowlist-var 'SSH.*' \
+  --verbose \
   -- \
   -Ivendored/include 
 
+rm vendored/include/libssh/libssh_version.h
