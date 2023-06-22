@@ -1271,6 +1271,74 @@ impl SshKey {
             return Ok(SshKey { key });
         }
     }
+
+    /// Import a certificate from the given filename.
+    ///
+    /// # Arguments
+    /// * `filename` - The path to the certificate.
+    ///
+    /// # Errors
+    /// Will return [`Err`] if failed to parse ssh key from file.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use libssh_rs::SshKey;
+    /// let cert_path = "/path/to/my/key-cert.pub";
+    /// # let cert_path = "./test/test-key-cert.pub";
+    ///
+    /// let cert = SshKey::from_cert_file(cert_path).unwrap();
+    /// ```
+    pub fn from_cert_file(filename: &str) -> SshResult<SshKey> {
+        let filename_cstr = CString::new(filename).map_err(|e| {
+            Error::Fatal(format!(
+                "Could not make CString from filename '{filename}': {e:#}"
+            ))
+        })?;
+        unsafe {
+            let mut key = sys::ssh_key_new();
+            if sys::ssh_pki_import_cert_file(filename_cstr.as_ptr(), &mut key) != sys::SSH_OK as i32
+            {
+                sys::ssh_key_free(key);
+                return Err(Error::Fatal(format!(
+                    "Failed to parse ssh key from file '{filename}'"
+                )));
+            }
+            return Ok(SshKey { key });
+        }
+    }
+
+    /// Copy the certificate part of a public key into a private key.
+    ///
+    /// # Arguments
+    /// * `privkey` - Copy the certificate part of a public key into a private key.
+    ///
+    /// # Errors
+    /// Will return [`Err`] if failed to copy cert to privkey.
+    ///
+    /// # Example
+    /// ```rust
+    /// # use libssh_rs::SshKey;
+    /// let privkey_path = "/path/to/my/key";
+    /// let cert_path = "/path/to/my/key-cert.pub";
+    ///
+    /// # let privkey_path = "./test/test-key";
+    /// # let cert_path = "./test/test-key-cert.pub";
+    /// #
+    /// let privkey = SshKey::from_privkey_file(privkey_path, None).unwrap();
+    /// let cert = SshKey::from_cert_file(cert_path).unwrap();
+    ///
+    /// cert.copy_to(&privkey).unwrap();
+    ///
+    /// ```
+    pub fn copy_to(&self, privkey: &Self) -> SshResult<()> {
+        unsafe {
+            if sys::ssh_pki_copy_cert_to_privkey(self.key, privkey.key) != sys::SSH_OK as i32 {
+                return Err(Error::Fatal("Failed to copy cert to privkey".to_string()));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 /// Allows configuring the underlying `libssh` debug logging level
