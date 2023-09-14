@@ -655,6 +655,22 @@ impl Session {
                     name.as_ptr() as _,
                 )
             },
+            SshOption::HmacCS(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_HMAC_C_S,
+                    name.as_ptr() as _,
+                )
+            },
+            SshOption::HmacSC(name) => unsafe {
+                let name = CString::new(name)?;
+                sys::ssh_options_set(
+                    **sess,
+                    sys::ssh_options_e::SSH_OPTIONS_HMAC_S_C,
+                    name.as_ptr() as _,
+                )
+            },
             SshOption::ProcessConfig(value) => unsafe {
                 let value: c_uint = value.into();
                 sys::ssh_options_set(
@@ -1345,6 +1361,10 @@ pub enum SshOption {
     CiphersCS(String),
     ///Set the symmetric cipher server to client as a comma-separated list.
     CiphersSC(String),
+    /// Set the MAC algorithm client to server as a comma-separated list.
+    HmacCS(String),
+    /// Set the MAC algorithm server to client as a comma-separated list.
+    HmacSC(String),
     /// Set it to false to disable automatic processing of per-user and system-wide OpenSSH configuration files.
     ProcessConfig(bool),
     /// Set the global known hosts file name
