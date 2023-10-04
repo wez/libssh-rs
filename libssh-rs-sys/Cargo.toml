@@ -16,10 +16,7 @@ cc = "1.0"
 
 [dependencies]
 libz-sys = { optional=true, version = "1.1", default-features = false, features = ["libc"] }
-# Pinned on this last version with openssl-src-300 until a newer release
-# is made that unblocks it.
-# <https://github.com/sfackler/rust-openssl/pull/1578>
-openssl-sys = "=0.9.71"
+openssl-sys = "~0.9"
 
 [features]
 vendored = ["libz-sys"]
