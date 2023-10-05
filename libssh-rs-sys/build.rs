@@ -16,6 +16,7 @@ fn main() {
     cfg.define("LIBSSH_STATIC", None);
     cfg.define("_GNU_SOURCE", None);
     cfg.include("vendored/include");
+    cfg.flag_if_supported("-Wno-deprecated-declarations");
 
     let dst = PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
     let include = dst.join("include");
