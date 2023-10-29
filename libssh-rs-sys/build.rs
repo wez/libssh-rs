@@ -30,7 +30,10 @@ fn main() {
 
     let target = std::env::var("TARGET").unwrap();
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
-    cfg.define("GLOBAL_BIND_CONFIG", Some("\"/etc/ssh/libssh_server_config\""));
+    cfg.define(
+        "GLOBAL_BIND_CONFIG",
+        Some("\"/etc/ssh/libssh_server_config\""),
+    );
     cfg.define("HAVE_GETADDRINFO", Some("1"));
     cfg.define("HAVE_LIBCRYPTO", Some("1"));
     cfg.define("HAVE_OPENSSL_AES_H", Some("1"));
