@@ -30,6 +30,7 @@ fn main() {
 
     let target = std::env::var("TARGET").unwrap();
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
+    cfg.define("GLOBAL_BIND_CONFIG", Some("\"/etc/ssh/libssh_server_config\""));
     cfg.define("HAVE_GETADDRINFO", Some("1"));
     cfg.define("HAVE_LIBCRYPTO", Some("1"));
     cfg.define("HAVE_OPENSSL_AES_H", Some("1"));
@@ -65,6 +66,7 @@ fn main() {
     cfg.define("WITH_ZLIB", Some("1"));
     cfg.define("WITH_GEX", Some("1"));
     cfg.define("WITH_SFTP", Some("1"));
+    cfg.define("WITH_SERVER", Some("1"));
 
     if target.contains("windows") {
         cfg.define("HAVE_IO_H", Some("1"));
@@ -167,6 +169,7 @@ fn main() {
         "auth.c",
         "base64.c",
         "bignum.c",
+        "bind_config.c",
         "buffer.c",
         "callbacks.c",
         "chachapoly.c",
@@ -220,6 +223,7 @@ fn main() {
         "pki_ed25519_common.c",
         "poll.c",
         "scp.c",
+        "server.c",
         "session.c",
         "sftp.c",
         "socket.c",
