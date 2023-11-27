@@ -29,6 +29,7 @@ fn main() {
     let openssl_version = u64::from_str_radix(&openssl_version, 16).unwrap();
 
     let target = std::env::var("TARGET").unwrap();
+    let target_family = std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
     cfg.define(
         "GLOBAL_BIND_CONFIG",
@@ -240,10 +241,10 @@ fn main() {
         cfg.file(&format!("vendored/src/{}", f));
     }
 
-    if cfg!(unix) {
+    if target_family == "unix" {
         cfg.file("vendored/src/threads/pthread.c");
     }
-    if cfg!(windows) {
+    if target_family == "windows" {
         cfg.file("vendored/src/threads/winlocks.c");
     }
     cfg.compile("libssh");
