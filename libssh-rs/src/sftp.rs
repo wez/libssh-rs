@@ -218,12 +218,12 @@ impl Sftp {
     pub fn open(
         &self,
         filename: &str,
-        accesstype: c_int,
+        accesstype: OpenFlags,
         mode: sys::mode_t,
     ) -> SshResult<SftpFile> {
         let filename = CString::new(filename)?;
         let (_sess, sftp) = self.lock_session();
-        let res = unsafe { sys::sftp_open(sftp, filename.as_ptr(), accesstype, mode) };
+        let res = unsafe { sys::sftp_open(sftp, filename.as_ptr(), accesstype.bits(), mode) };
         if res.is_null() {
             Err(Error::Sftp(SftpError::from_session(sftp)))
         } else {
@@ -655,4 +655,30 @@ pub enum FileType {
     Regular,
     Directory,
     Unknown,
+}
+
+bitflags::bitflags! {
+     /// Bitflags that indicate options for opening a sftp file.
+    pub struct OpenFlags: c_int {
+        /// The file should be opened as read-only.
+        const READ_ONLY = libc::O_RDONLY;
+        /// The file should be opened as write-only.
+        const WRITE_ONLY = libc::O_WRONLY;
+        /// The file should be opened as read and write.
+        ///
+        /// Note that this is a different value than `READ_ONLY | WRITE_ONLY`, which is a logic error.
+        const READ_WRITE = libc::O_RDWR;
+        /// Create the file if it does not exist.
+        const CREATE = libc::O_CREAT;
+        /// When used with `CREATE`, this flag ensures that a new file is created.
+        const EXCLUSIVE = libc::O_EXCL;
+        /// If the file exists, truncate it.
+        const TRUNCATE = libc::O_TRUNC;
+        /// Before each write, the file offset is set to the end of the file.
+        const APPEND = libc::O_APPEND;
+        /// Create a new file, failing if it already exists.
+        ///
+        /// This is an alias for `CREATE | EXCLUSIVE`.
+        const CREATE_NEW = libc::O_CREAT | libc::O_EXCL;
+    }
 }
