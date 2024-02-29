@@ -106,6 +106,9 @@ fn main() {
         cfg.define("HAVE_NTOHLL", Some("1"));
         cfg.define("HAVE_HTONLL", Some("1"));
     }
+    if target.contains("android") {
+        cfg.define("__ANDROID_API__", Some("21"));
+    }
 
     let compiler = cfg.get_compiler();
     if compiler.is_like_gnu() || compiler.is_like_clang() {
