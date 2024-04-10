@@ -75,6 +75,7 @@ pub(crate) struct SessionHolder {
     sess: sys::ssh_session,
     callbacks: sys::ssh_callbacks_struct,
     auth_callback: Option<Box<dyn FnMut(&str, bool, bool, Option<String>) -> SshResult<String>>>,
+    pending_agent_forward_channels: Vec<sys::ssh_channel>,
 }
 unsafe impl Send for SessionHolder {}
 
@@ -87,6 +88,7 @@ impl std::ops::Deref for SessionHolder {
 
 impl Drop for SessionHolder {
     fn drop(&mut self) {
+        self.clear_pending_agent_forward_channels();
         unsafe {
             sys::ssh_free(self.sess);
         }
@@ -157,6 +159,15 @@ impl SessionHolder {
             }
         }
     }
+
+    fn clear_pending_agent_forward_channels(&mut self) {
+        for chan in self.pending_agent_forward_channels.drain(..) {
+            unsafe {
+                // We have no callbacks on these channels, no need to cleanup.
+                sys::ssh_channel_free(chan);
+            }
+        }
+    }
 }
 
 /// A Session represents the state needed to make a connection to
@@ -201,6 +212,7 @@ impl Session {
                 sess,
                 callbacks,
                 auth_callback: None,
+                pending_agent_forward_channels: Vec::new(),
             }));
 
             {
@@ -274,6 +286,21 @@ impl Session {
         }
     }
 
+    unsafe extern "C" fn channel_open_request_auth_agent_callback(
+        session: sys::ssh_session,
+        userdata: *mut ::std::os::raw::c_void,
+    ) -> sys::ssh_channel {
+        let sess: &mut SessionHolder = &mut *(userdata as *mut SessionHolder);
+        let chan = sys::ssh_channel_new(session);
+        if chan.is_null() {
+            eprintln!("ssh_channel_new failed: {:?}", sess.last_error());
+            return std::ptr::null_mut();
+        }
+        // We are guarenteed to be holding a session lock here.
+        sess.pending_agent_forward_channels.push(chan);
+        chan
+    }
+
     /// Sets a callback that is used by libssh when it needs to prompt
     /// for the passphrase during public key authentication.
     /// This is NOT used for password or keyboard interactive authentication.
@@ -324,6 +351,30 @@ impl Session {
         let mut sess = self.lock_session();
         sess.auth_callback.replace(Box::new(callback));
         sess.callbacks.auth_function = Some(Self::bridge_auth_callback);
+    }
+
+    /// Enable or disable creating channels when the remote side requests a new channel for SSH
+    /// agent forwarding.
+    /// You are supposed to periodically check whether there's pending channels (already bound to
+    /// remote side's agent client) by using the `accept_agent_forward` function.
+    pub fn enable_accept_agent_forward(&self, enable: bool) {
+        let mut sess = self.lock_session();
+        sess.callbacks.channel_open_request_auth_agent_function = if enable {
+            Some(Self::channel_open_request_auth_agent_callback)
+        } else {
+            sess.clear_pending_agent_forward_channels();
+            // libssh denies auth agent channel requests with no callback set.
+            None
+        }
+    }
+
+    // Accept an auth agent forward channel.
+    // Returns a `Channel` bound to the remote side SSH agent client, or `None` if no pending
+    // request from the server.
+    pub fn accept_agent_forward(&self) -> Option<Channel> {
+        let mut sess = self.lock_session();
+        let chan = sess.pending_agent_forward_channels.pop()?;
+        Some(Channel::new(&self.sess, chan))
     }
 
     /// Create a new channel.
