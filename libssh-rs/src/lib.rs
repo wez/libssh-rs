@@ -1324,13 +1324,13 @@ impl SshKey {
     /// # let privkey_path = "./test/test-key";
     /// # let cert_path = "./test/test-key-cert.pub";
     /// #
-    /// let privkey = SshKey::from_privkey_file(privkey_path, None).unwrap();
+    /// let mut privkey = SshKey::from_privkey_file(privkey_path, None).unwrap();
     /// let cert = SshKey::from_cert_file(cert_path).unwrap();
     ///
-    /// cert.copy_to(&privkey).unwrap();
+    /// cert.copy_certificate_to_private_key(&mut privkey).unwrap();
     ///
     /// ```
-    pub fn copy_to(&self, privkey: &Self) -> SshResult<()> {
+    pub fn copy_certificate_to_private_key(&self, privkey: &mut Self) -> SshResult<()> {
         unsafe {
             if sys::ssh_pki_copy_cert_to_privkey(self.key, privkey.key) != sys::SSH_OK as i32 {
                 return Err(Error::Fatal("Failed to copy cert to privkey".to_string()));
