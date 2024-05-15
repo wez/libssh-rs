@@ -14,7 +14,6 @@ fn main() {
 
     let mut cfg = cc::Build::new();
     cfg.define("LIBSSH_STATIC", None);
-    cfg.define("_GNU_SOURCE", None);
     cfg.include("vendored/include");
     cfg.flag_if_supported("-Wno-deprecated-declarations");
 
@@ -29,6 +28,7 @@ fn main() {
     let openssl_version = u64::from_str_radix(&openssl_version, 16).unwrap();
 
     let target = std::env::var("TARGET").unwrap();
+
     let target_family = std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
     cfg.define(
@@ -106,8 +106,11 @@ fn main() {
         cfg.define("HAVE_NTOHLL", Some("1"));
         cfg.define("HAVE_HTONLL", Some("1"));
     }
+
     if target.contains("android") {
-        cfg.define("__ANDROID_API__", Some("21"));
+        cfg.define("_BSD_SOURCE", None);
+    } else {
+        cfg.define("_GNU_SOURCE", None);
     }
 
     let compiler = cfg.get_compiler();
