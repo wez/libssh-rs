@@ -1,0 +1,70 @@
+name: Android
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: build (android-${{ matrix.android-api }} on ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest, macos-latest ]
+        android-api: [ 21, 28 ]
+        include:
+          - os: windows-latest
+            clang-suffix: .cmd
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          submodules: "recursive"
+      - name: Install Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: 'r26d'
+      - name: Adding NDK to PATH (*nix)
+        if: ${{ !startsWith(matrix.os, 'windows') }}
+        run: echo ${ANDROID_NDK_HOME}/toolchains/llvm/prebuilt/*/bin >> $GITHUB_PATH
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      - name: Adding NDK to PATH (Windows)
+        shell: pwsh
+        if: ${{ startsWith(matrix.os, 'windows') }}
+        run: echo "${env:ANDROID_NDK_HOME}\toolchains\llvm\prebuilt\windows-x86_64\bin" >> $env:GITHUB_PATH
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+      - name: Install Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          target: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - name: Download prebuilt OpenSSL
+        uses: actions/checkout@v4
+        with:
+          repository: KDAB/android_openssl
+          path: android_openssl
+      - name: Build and test
+        run: |
+          rustc -V
+          cargo -V
+          cargo build --target aarch64-linux-android
+          cargo build --target armv7-linux-androideabi
+          cargo build --target i686-linux-android
+          cargo build --target x86_64-linux-android
+        env:
+          OPENSSL_INCLUDE_DIR: "${{ github.workspace }}/android_openssl/ssl_1.1/include"
+          AARCH64_LINUX_ANDROID_OPENSSL_LIB_DIR: "${{ github.workspace }}/android_openssl/ssl_1.1/arm64-v8a"
+          ARMV7_LINUX_ANDROIDEABI_OPENSSL_LIB_DIR: "${{ github.workspace }}/android_openssl/ssl_1.1/armeabi-v7a"
+          I686_LINUX_ANDROID_OPENSSL_LIB_DIR: "${{ github.workspace }}/android_openssl/ssl_1.1/x86"
+          X86_64_LINUX_ANDROID_OPENSSL_LIB_DIR: "${{ github.workspace }}/android_openssl/ssl_1.1/x86_64"
+          CC_aarch64_linux_android: "aarch64-linux-android${{ matrix.android-api }}-clang${{ matrix.clang-suffix }}"
+          CC_armv7-linux-androideabi: "armv7a-linux-androideabi${{ matrix.android-api }}-clang${{ matrix.clang-suffix }}"
+          CC_i686_linux_android: "i686-linux-android${{ matrix.android-api }}-clang${{ matrix.clang-suffix }}"
+          CC_x86_64_linux_android: "x86_64-linux-android${{ matrix.android-api }}-clang${{ matrix.clang-suffix }}"
