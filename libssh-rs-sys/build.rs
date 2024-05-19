@@ -262,6 +262,8 @@ fn main() {
         println!("cargo:rustc-link-lib=user32");
         println!("cargo:rustc-link-lib=shell32");
         println!("cargo:rustc-link-lib=ntdll");
+        println!("cargo:rustc-link-lib=iphlpapi");
+        println!("cargo:rustc-link-lib=ws2_32");
     } else {
         println!("cargo:rustc-link-lib=ssl");
         println!("cargo:rustc-link-lib=crypto");
