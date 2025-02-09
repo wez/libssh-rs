@@ -17,7 +17,7 @@ use std::os::unix::io::RawFd as RawSocket;
 #[cfg(windows)]
 use std::os::windows::io::RawSocket;
 use std::ptr::null_mut;
-use std::sync::Once;
+use std::sync::LazyLock;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
@@ -57,14 +57,10 @@ impl Drop for LibraryState {
     }
 }
 
-static INIT: Once = Once::new();
-static mut LIB: Option<LibraryState> = None;
+static LIB: LazyLock<Option<LibraryState>> = LazyLock::new(|| LibraryState::new());
 
 fn initialize() -> SshResult<()> {
-    INIT.call_once(|| unsafe {
-        LIB = LibraryState::new();
-    });
-    if unsafe { LIB.is_none() } {
+    if LIB.is_none() {
         Err(Error::fatal("ssh_init failed"))
     } else {
         Ok(())
