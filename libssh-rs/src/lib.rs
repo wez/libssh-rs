@@ -207,6 +207,7 @@ impl Session {
                 global_request_function: None,
                 channel_open_request_x11_function: None,
                 channel_open_request_auth_agent_function: None,
+                channel_open_request_forwarded_tcpip_function: None,
             };
             let sess = Arc::new(Mutex::new(SessionHolder {
                 sess,

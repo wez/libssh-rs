@@ -142,6 +142,8 @@ impl Channel {
             channel_env_request_function: None,
             channel_subsystem_request_function: None,
             channel_write_wontblock_function: None,
+            channel_open_response_function: None,
+            channel_request_response_function: None,
         });
 
         unsafe { sys::ssh_set_channel_callbacks(chan, callbacks.as_ref() as *const _ as *mut _) };
