@@ -229,7 +229,7 @@ fn main() {
         "pki.c",
         "pki_container_openssh.c",
         "pki_crypto.c",
-        "pki_ed25519.c",
+        // "pki_ed25519.c", gcrypt only
         "pki_ed25519_common.c",
         "poll.c",
         "scp.c",
