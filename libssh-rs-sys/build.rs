@@ -236,6 +236,7 @@ fn main() {
         "server.c",
         "session.c",
         "sftp.c",
+        "sftpserver.c",
         "sftp_common.c",
         "sftp_aio.c",
         "socket.c",
