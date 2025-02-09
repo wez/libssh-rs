@@ -236,12 +236,15 @@ fn main() {
         "server.c",
         "session.c",
         "sftp.c",
+        "sftp_common.c",
+        "sftp_aio.c",
         "socket.c",
         "string.c",
         "threads.c",
         "threads/libcrypto.c",
         "threads/noop.c",
         "token.c",
+        "ttyopts.c",
         "wrapper.c",
     ] {
         cfg.file(&format!("vendored/src/{}", f));
