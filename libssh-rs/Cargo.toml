@@ -1,6 +1,6 @@
 [package]
 name = "libssh-rs"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2018"
 repository = "https://github.com/wez/libssh-rs"
 description = "Bindings to the libssh library"
