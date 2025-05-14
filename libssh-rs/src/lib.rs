@@ -1169,6 +1169,21 @@ impl Session {
         sftp.init()?;
         Ok(sftp)
     }
+
+    /// Send a message that should be ignored by the peer
+    pub fn send_ignore(&self, data: &[u8]) -> SshResult<()> {
+        let sess = self.lock_session();
+        let status = unsafe { sys::ssh_send_ignore(**sess, data.as_ptr() as _) };
+        if status != sys::SSH_OK as i32 {
+            if let Some(err) = sess.last_error() {
+                Err(err)
+            } else {
+                Err(Error::TryAgain)
+            }
+        } else {
+            Ok(())
+        }
+    }
 }
 
 #[cfg(unix)]
