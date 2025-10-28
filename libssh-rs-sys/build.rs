@@ -260,8 +260,15 @@ fn main() {
     cfg.compile("libssh");
 
     if target.contains("windows") {
-        println!("cargo:rustc-link-lib=libcrypto");
-        println!("cargo:rustc-link-lib=libssl");
+        if target.contains("windows-msvc") {
+            // target `windows-msvc` expects `lib` prefix
+            println!("cargo:rustc-link-lib=libcrypto");
+            println!("cargo:rustc-link-lib=libssl");
+        } else {
+            // target `windows-gnu` adds the `lib` prefix
+            println!("cargo:rustc-link-lib=crypto");
+            println!("cargo:rustc-link-lib=ssl");
+        }
         println!("cargo:rustc-link-lib=crypt32");
         println!("cargo:rustc-link-lib=user32");
         println!("cargo:rustc-link-lib=shell32");
