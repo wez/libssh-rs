@@ -269,6 +269,7 @@ fn main() {
             println!("cargo:rustc-link-lib=crypto");
             println!("cargo:rustc-link-lib=ssl");
         }
+        println!("cargo:rustc-link-lib=advapi32");
         println!("cargo:rustc-link-lib=crypt32");
         println!("cargo:rustc-link-lib=user32");
         println!("cargo:rustc-link-lib=shell32");
