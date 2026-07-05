@@ -17,14 +17,11 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
     - name: "checkout repo"
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: "recursive"
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
+      uses: dtolnay/rust-toolchain@stable
     - name: Build and test
       run: |
         rustc -V

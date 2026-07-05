@@ -13,23 +13,20 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-2019]
+        os: [windows-2022]
         env:
         - TARGET: x86_64-pc-windows-msvc
         - TARGET: i686-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
     - name: "checkout repo"
-      uses: actions/checkout@v2
+      uses: actions/checkout@v4
       with:
         submodules: "recursive"
     - name: Install Rust
-      uses: actions-rs/toolchain@v1
+      uses: dtolnay/rust-toolchain@stable
       with:
-        profile: minimal
-        toolchain: stable
-        override: true
-        target: ${{ matrix.env.TARGET }}
+        targets: ${{ matrix.env.TARGET }}
     - name: Build and test
       env:
         TARGET: ${{ matrix.env.TARGET }}
