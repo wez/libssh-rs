@@ -30,6 +30,11 @@ fn main() {
     let target = std::env::var("TARGET").unwrap();
 
     let target_family = std::env::var("CARGO_CFG_TARGET_FAMILY").unwrap();
+    if target.contains("windows") {
+        cfg.define("GLOBAL_CONF_DIR", Some("\"C:/ProgramData/ssh\""));
+    } else {
+        cfg.define("GLOBAL_CONF_DIR", Some("\"/etc/ssh\""));
+    }
     cfg.define("GLOBAL_CLIENT_CONFIG", Some("\"/etc/ssh/ssh_config\""));
     cfg.define(
         "GLOBAL_BIND_CONFIG",
