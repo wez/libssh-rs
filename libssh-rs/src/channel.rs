@@ -459,7 +459,7 @@ impl Channel {
             None => -1,
         };
         let res =
-            unsafe { sys::ssh_channel_poll_timeout(chan, if is_stderr { 1 } else { 0 }, timeout) };
+            unsafe { sys::ssh_channel_poll_timeout(chan, timeout, if is_stderr { 1 } else { 0 }) };
         match res {
             sys::SSH_ERROR => {
                 if let Some(err) = sess.last_error() {
