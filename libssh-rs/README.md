@@ -10,10 +10,7 @@ Bindings to [libssh](https://www.libssh.org/).
 
 The `vendored` feature causes a static version of libssh to be compiled and linked into your program.
 If no system `libssh` is detected at build time, or that system library is too old, then the vendored
-`libssh` implementation will be used automatically. Note that the `libssh-rs` bindings make use of
-a couple of new interfaces that have not made it into a released version of `libssh` at the time
-of writing this note, so all users will be effectively running with `vendored` enabled until libssh
-releases version `0.9.7`.
+`libssh` implementation will be used automatically.
 
 The `vendored-openssl` feature causes a vendored copy of `openssl` to be compiled and linked into your program.
 
