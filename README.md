@@ -13,10 +13,7 @@ and the `libssh-rs` crate which provides safe bindings based on `libssh-rs-sys`.
 
 The `vendored` feature causes a static version of libssh to be compiled and linked into your program.
 If no system `libssh` is detected at build time, or that system library is too old, then the vendored
-`libssh` implementation will be used automatically. Note that the `libssh-rs` bindings make use of
-a couple of new interfaces that have not made it into a released version of `libssh` at the time
-of writing this note, so all users will be effectively running with `vendored` enabled until libssh
-releases version `0.9.7`.
+`libssh` implementation will be used automatically.
 
 The `vendored-openssl` feature causes a vendored copy of `openssl` to be compiled and linked into your program.
 
@@ -35,4 +32,3 @@ viral clause in the case where you modify `libssh`.  The license is explained
 that simply using an unmodified `libssh-rs-sys` crate will not trigger that
 viral clause, and you are thus able to use this crate under the terms of the
 MIT license.
-

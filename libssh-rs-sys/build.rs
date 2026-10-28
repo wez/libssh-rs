@@ -3,9 +3,7 @@ use std::path::PathBuf;
 fn main() {
     if std::env::var_os("CARGO_FEATURE_VENDORED").is_none()
         && pkg_config::Config::new()
-            // ssh_userauth_publickey_auto_get_current_identity
-            // is not yet in a released version of libssh
-            .atleast_version("0.9.7")
+            .atleast_version("0.12.2")
             .probe("libssh")
             .is_ok()
     {
@@ -135,8 +133,8 @@ fn main() {
     let version = std::fs::read_to_string("vendored/include/libssh/libssh_version.h.cmake")
         .unwrap()
         .replace("@libssh_VERSION_MAJOR@", "0")
-        .replace("@libssh_VERSION_MINOR@", "8")
-        .replace("@libssh_VERSION_PATCH@", "90");
+        .replace("@libssh_VERSION_MINOR@", "12")
+        .replace("@libssh_VERSION_PATCH@", "2");
 
     std::fs::create_dir_all(include.join("libssh")).unwrap();
     std::fs::write(include.join("libssh/libssh_version.h"), version).unwrap();
@@ -196,6 +194,7 @@ fn main() {
         "connector.c",
         "crypto_common.c",
         "curve25519.c",
+        "curve25519_crypto.c",
         "dh-gex.c",
         "dh.c",
         "dh_crypto.c",
@@ -209,11 +208,14 @@ fn main() {
         "external/ed25519.c",
         "external/fe25519.c",
         "external/ge25519.c",
+        "external/libcrux_mlkem768_sha3.c",
         "external/poly1305.c",
         "external/sc25519.c",
+        "external/sntrup761.c",
         "getpass.c",
         "getrandom_crypto.c",
         "gzip.c",
+        "hybrid_mlkem.c",
         "init.c",
         "kdf.c",
         "kex.c",
@@ -226,12 +228,15 @@ fn main() {
         "md_crypto.c",
         "messages.c",
         "misc.c",
+        "mlkem.c",
+        "mlkem_native.c",
         "options.c",
         "packet.c",
         "packet_cb.c",
         "packet_crypt.c",
         "pcap.c",
         "pki.c",
+        "pki_context.c",
         "pki_container_openssh.c",
         "pki_crypto.c",
         // "pki_ed25519.c", gcrypt only
@@ -245,6 +250,7 @@ fn main() {
         "sftp_common.c",
         "sftp_aio.c",
         "socket.c",
+        "sntrup761.c",
         "string.c",
         "threads.c",
         "threads/libcrypto.c",
