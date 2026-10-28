@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Regenerate the ffi bindings
 cat >binding.h <<-EOT
 typedef unsigned long size_t;
@@ -31,6 +31,6 @@ bindgen \
   --allowlist-var 'SSH.*' \
   --verbose \
   -- \
-  -Ivendored/include 
+  -Ivendored/include
 
 rm vendored/include/libssh/libssh_version.h
