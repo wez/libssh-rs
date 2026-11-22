@@ -56,6 +56,7 @@ impl Drop for Channel {
 /// State visible to the callbacks
 struct CallbackState {
     signal_state: Mutex<Option<SignalState>>,
+    exit_status: Mutex<Option<c_int>>,
 }
 
 #[derive(Clone, Debug)]
@@ -76,6 +77,20 @@ fn cstr_to_opt_string(cstr: *const ::std::os::raw::c_char) -> Option<String> {
             .to_string_lossy()
             .to_string(),
     )
+}
+
+unsafe extern "C" fn handle_exit_status(
+    _session: sys::ssh_session,
+    _channel: sys::ssh_channel,
+    exit_status: ::std::os::raw::c_int,
+    userdata: *mut ::std::os::raw::c_void,
+) {
+    let callback_state: &CallbackState = &*(userdata as *const CallbackState);
+    callback_state
+        .exit_status
+        .lock()
+        .unwrap()
+        .replace(exit_status);
 }
 
 unsafe extern "C" fn handle_exit_signal(
@@ -122,6 +137,7 @@ impl Channel {
     pub(crate) fn new(sess: &Arc<Mutex<SessionHolder>>, chan: sys::ssh_channel) -> Self {
         let callback_state = Box::new(CallbackState {
             signal_state: Mutex::new(None),
+            exit_status: Mutex::new(None),
         });
 
         let callbacks = Box::new(sys::ssh_channel_callbacks_struct {
@@ -131,7 +147,7 @@ impl Channel {
             channel_eof_function: None,
             channel_close_function: None,
             channel_signal_function: None,
-            channel_exit_status_function: None,
+            channel_exit_status_function: Some(handle_exit_status),
             channel_exit_signal_function: Some(handle_exit_signal),
             channel_pty_request_function: None,
             channel_shell_request_function: None,
@@ -176,12 +192,9 @@ impl Channel {
     /// side is not willing to close the channel.
     pub fn get_exit_status(&self) -> Option<c_int> {
         let (_sess, chan) = self.lock_session();
-        let res = unsafe { sys::ssh_channel_get_exit_status(chan) };
-        if res == -1 {
-            None
-        } else {
-            Some(res)
-        }
+        // Only used to wait; the exit status is recorded by handle_exit_status().
+        unsafe { sys::ssh_channel_get_exit_status(chan) };
+        *self.callback_state.exit_status.lock().unwrap()
     }
 
     /// Get the exit signal status of the channel.
